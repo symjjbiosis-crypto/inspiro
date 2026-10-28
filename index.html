@@ -222,7 +222,13 @@ details.more[open] summary{margin-bottom:12px}
 .reactrow .react{flex-direction:column;justify-content:center;gap:1px;padding:7px 3px;font-size:11px;line-height:1.25;text-align:center;word-break:keep-all}
 .reactrow .react .e{font-size:16px}
 .reactrow .react .n{font-size:11px}
-#saveBtn{margin-top:10px}
+/* 촬영 정보 옆 북마크 */
+.recrow{display:flex;gap:8px;align-items:flex-start}
+.recrow .recipe-box{flex:1;min-width:0}
+.bmk{flex:none;width:56px;height:64px;border:1px solid var(--line);background:var(--surface);border-radius:12px;cursor:pointer;display:grid;place-items:center;color:var(--muted)}
+.bmk svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
+.bmk[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.bmk[aria-pressed="true"] svg{fill:currentColor}
 /* saved */
 .place-list{display:grid;gap:8px}
 .place{background:var(--surface);border-radius:10px;padding:10px 12px;display:flex;gap:12px;align-items:center;cursor:pointer;border:0;text-align:left;width:100%}
@@ -556,6 +562,8 @@ document.addEventListener('click',e=>{const c=e.target.closest('.card,.place');i
 let openId=null;
 let recipeOpen=false,reactOpen=false;
 function reactSummary(p){const m=mine[p.id]||{};const picked=REACT.filter(r=>m[r.k]).map(r=>r.l.split(' ')[0]).join('');let t=0;REACT.forEach(r=>t+=count(p,r.k));return(picked?picked+' ':'')+'<span class="n">'+t+'</span>'}
+const BMK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>';
+function bmk(p){const on=saved.has(p.id);return'<button type="button" class="bmk" id="saveBtn" aria-pressed="'+on+'" aria-label="'+(on?'저장됨 · 보관함에서 빼기':'레시피 저장')+'" title="'+(on?'저장됨':'레시피 저장')+'">'+BMK+'</button>'}
 function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen=false;reactOpen=false}openId=id;
   const acc=(p.acc||[]).concat(p.accMore?[p.accMore]:[]);
   const sn=sunNote(p);
@@ -564,7 +572,7 @@ function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen
    '<div class="d-sub">'+(p.authorId?'<button type="button" class="author" data-prof="'+esc(p.authorId)+'">'+esc(authorName(p))+'</button>':esc(authorName(p)))+(p.example?' · <span class="ex">예시</span>':'')+'</div>'+
    '<img class="hero" src="'+p.img+'" alt="'+esc(p.title)+'">'+
    '<div class="lcd"><div><b>'+(p.focal?esc(p.focal)+'mm':'—')+'</b><span>FOCAL</span></div><div><b>'+(p.f?'f/'+esc(p.f):'—')+'</b><span>APERTURE</span></div><div><b>'+esc(shutterTxt(p.s))+'</b><span>SHUTTER</span></div><div><b>'+(p.iso?esc(p.iso):'—')+'</b><span>ISO</span></div></div>'+
-   '<details class="recipe-box"'+(recipeOpen?' open':'')+'><summary><span class="label">촬영 정보</span><span class="rsum">'+esc([placeTxt(p),TOD[p.tod],p.body].filter(Boolean).join(' · '))+'</span></summary><div class="recipe">'+
+   '<div class="recrow"><details class="recipe-box"'+(recipeOpen?' open':'')+'><summary><span class="label">촬영 정보</span><span class="rsum">'+esc([placeTxt(p),TOD[p.tod],p.body].filter(Boolean).join(' · '))+'</span></summary><div class="recipe">'+
     locRow(p)+
     '<div class="row"><div class="k">언제</div><div class="v">'+esc(p.date||'')+' '+esc(p.time||'')+' '+todPill(p.tod)+(sn?'<div class="sunnote">'+esc(sn)+'</div>':'')+'</div></div>'+
     '<div class="row"><div class="k">날씨</div><div class="v tags">'+((p.wx||[]).map(w=>'<span class="tag">'+esc(w)+'</span>').join('')||'—')+'</div></div>'+
@@ -573,11 +581,10 @@ function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen
     '<div class="row"><div class="k">렌즈</div><div class="v">'+esc(p.lens||(p.dev==='phone'?'내장 카메라':'—'))+'</div></div>'+
     '<div class="row"><div class="k">액세서리</div><div class="v tags">'+(acc.map(a=>'<span class="tag">'+esc(a)+'</span>').join('')||'없음')+'</div></div>'+
     '<div class="row"><div class="k">보정</div><div class="v">'+esc(p.edit||'—')+'</div></div>'+
-   '</div></details>'+
+   '</div></details>'+bmk(p)+'</div>'+
    '<div class="reactrow"><button type="button" class="react-main" id="reactMain" aria-expanded="'+reactOpen+'" aria-controls="reactPanel"><span>반응</span><span id="reactSum">'+reactSummary(p)+'</span></button>'+
    '<div class="reacts" id="reactPanel"'+(reactOpen?'':' hidden')+'>'+REACT.map(r=>{const i=r.l.indexOf(' ');return'<button class="react" data-k="'+r.k+'" aria-pressed="'+!!(mine[p.id]||{})[r.k]+'" title="'+r.l.slice(i+1)+'"><span class="e">'+r.l.slice(0,i)+'</span><span>'+r.l.slice(i+1)+'</span><span class="n">'+count(p,r.k)+'</span></button>'}).join('')+'</div></div>'+
    (p.tip?'<div class="tip"><div class="label">촬영 팁</div>'+esc(p.tip)+'</div>':'')+
-   '<button class="primary '+(saved.has(p.id)?'ghost':'')+'" id="saveBtn">'+(saved.has(p.id)?'저장됨 · 보관함에서 빼기':'레시피 저장')+'</button>'+
    cmtHtml(p)+'<button class="link report" id="reportBtn">신고하기</button>'+
    ((p.authorId&&(p.authorId===myId||iCanEdit))||String(p.id).startsWith('u')?'<button class="link report danger" id="delBtn">이 사진 삭제</button>':'');
   $('#sheet').hidden=false;$('#sheet').scrollTop=0;document.body.style.overflow='hidden';
@@ -595,9 +602,9 @@ $('#sheetBody').addEventListener('click',e=>{const p=byId(openId);if(!p)return;
   if(e.target.id==='delBtn'){const b=e.target;if(!b.dataset.arm){b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제돼요';return}deletePost(p);return}
   if(e.target.id==='reportBtn'){const w=document.createElement('div');w.className='reasons';w.innerHTML='<span class="label">신고 사유</span>'+REASONS.map(r=>'<button type="button" class="chip" data-reason="'+r+'">'+r+'</button>').join('');e.target.replaceWith(w);return}
   if(e.target.dataset&&e.target.dataset.reason){const w=e.target.closest('.reasons');sendReport(p,e.target.dataset.reason);if(w)w.innerHTML='<span class="section-note">신고를 보냈어요.</span>';return}
-  if(e.target.id==='saveBtn'&&!realId){toast('로그인하면 레시피를 저장할 수 있어요');login();return}
-  if(e.target.id==='saveBtn'){if(saved.has(p.id)){saved.delete(p.id);toast('보관함에서 뺐어요')}else{saved.add(p.id);toast('레시피를 저장했어요')}save('cn_saved',[...saved]);pushSaved();
-    const b=e.target;b.classList.toggle('ghost',saved.has(p.id));b.textContent=saved.has(p.id)?'저장됨 · 보관함에서 빼기':'레시피 저장'}
+  if(e.target.closest('#saveBtn')&&!realId){toast('로그인하면 레시피를 저장할 수 있어요');login();return}
+  if(e.target.closest('#saveBtn')){if(saved.has(p.id)){saved.delete(p.id);toast('보관함에서 뺐어요')}else{saved.add(p.id);toast('레시피를 저장했어요')}save('cn_saved',[...saved]);pushSaved();
+    const b=$('#saveBtn');const on=saved.has(p.id);b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'저장됨 · 보관함에서 빼기':'레시피 저장');b.title=on?'저장됨':'레시피 저장'}
 });
 
 /* ---------- 보관함 ---------- */
