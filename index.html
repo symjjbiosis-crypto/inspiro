@@ -91,6 +91,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .pin .ph{width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);background:#ccc}
 .pin .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .pin b{position:absolute;right:-6px;top:-6px;background:var(--accent);color:var(--accent-ink);font:600 11px/18px var(--f-body);min-width:18px;text-align:center;border-radius:999px;padding:0 5px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.rx{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:10px 0 4px}
+.rx .react{display:flex;align-items:center;justify-content:center;gap:4px;height:38px;padding:0 4px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font:500 13px/1 var(--f-body);color:var(--ink);white-space:nowrap;cursor:pointer;transition:background .12s,border-color .12s}
+.rx .react .e{font-size:14px}
+.rx .react .n{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+.rx .react .n:empty{display:none}
+.rx .react[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.rx .react[aria-pressed="true"] .n{color:var(--bg);opacity:.75}
 .homebox{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .locline{display:flex;gap:8px;align-items:flex-start}.locmain{flex:1;min-width:0}
 .locsel{flex:none;padding:8px 6px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:13px;max-width:116px}
@@ -225,13 +232,6 @@ details.more[open] summary{margin-bottom:12px}
 .react-main[aria-expanded="true"]{border-color:var(--accent)}
 .reacts{margin:8px 0 10px}
 /* 반응: 촬영 정보 바로 아래 한 줄 (5칸) */
-.reactrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:10px 0}
-#reactPanel{display:contents;margin:0}
-.reactrow .react-main{width:auto;margin:0;flex-direction:column;justify-content:center;gap:2px;padding:8px 4px;font-size:12.5px;text-align:center}
-.reactrow .react-main .n{margin-left:0}
-.reactrow .react{flex-direction:column;justify-content:center;gap:1px;padding:7px 3px;font-size:11px;line-height:1.25;text-align:center;word-break:keep-all}
-.reactrow .react .e{font-size:16px}
-.reactrow .react .n{font-size:11px}
 /* 촬영 정보 옆 북마크 */
 .recrow{display:flex;gap:8px;align-items:flex-start}
 .recrow .recipe-box{flex:1;min-width:0}
@@ -435,7 +435,7 @@ const st = getStorage(fbApp);
 const TOD = {morning:'아침', day:'낮', golden:'골든아워', blue:'블루아워', night:'야간'};
 const WX = ['맑음','구름','흐림','안개','비 온 뒤','눈'];
 const ACC = ['삼각대','블랙미스트·디퓨전','CPL','ND','GND','릴리즈'];
-const REACT = [{k:'go',l:'📍 가보고 싶어요'},{k:'color',l:'🎨 색감 참고'},{k:'comp',l:'📐 구도 참고'},{k:'gear',l:'🔧 장비 참고'}];
+const REACT = [{k:'go',l:'📍 가보고 싶어요',s:'가볼래'},{k:'color',l:'🎨 색감 참고',s:'색감'},{k:'comp',l:'📐 구도 참고',s:'구도'},{k:'gear',l:'🔧 장비 참고',s:'장비'}];
 const DEV={phone:'스마트폰',mirrorless:'미러리스',dslr:'DSLR',compact:'컴팩트 디카',film:'필름 카메라',drone:'드론'};
 const LOC={hidden:'비공개',region:'지역까지만',exact:'정확한 위치'};
 const LOCNOTE={hidden:'위치를 아무에게도 보여주지 않아요.',region:'시·군 이름까지만 보여요. 집 근처 사진은 비공개를 권해요.',exact:'장소 이름과 지도 링크까지 공개돼요.'};
@@ -660,8 +660,7 @@ function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen
     '<div class="row"><div class="k">액세서리</div><div class="v tags">'+(acc.map(a=>'<span class="tag">'+esc(a)+'</span>').join('')||'없음')+'</div></div>'+
     '<div class="row"><div class="k">보정</div><div class="v">'+esc(p.edit||'—')+'</div></div>'+
    '</div></details>'+bmk(p)+'</div>'+
-   '<div class="reactrow"><button type="button" class="react-main" id="reactMain" aria-expanded="'+reactOpen+'" aria-controls="reactPanel"><span>반응</span><span id="reactSum">'+reactSummary(p)+'</span></button>'+
-   '<div class="reacts" id="reactPanel"'+(reactOpen?'':' hidden')+'>'+REACT.map(r=>{const i=r.l.indexOf(' ');return'<button class="react" data-k="'+r.k+'" aria-pressed="'+!!(mine[p.id]||{})[r.k]+'" title="'+r.l.slice(i+1)+'"><span class="e">'+r.l.slice(0,i)+'</span><span>'+r.l.slice(i+1)+'</span><span class="n">'+count(p,r.k)+'</span></button>'}).join('')+'</div></div>'+
+   '<div class="rx" id="reactPanel" role="group" aria-label="반응 (하나만 고를 수 있어요)">'+REACT.map(r=>{const on=!!(mine[p.id]||{})[r.k],n=count(p,r.k);return'<button type="button" class="react" data-k="'+r.k+'" aria-pressed="'+on+'" title="'+r.l.slice(r.l.indexOf(' ')+1)+'"><span class="e">'+r.l.split(' ')[0]+'</span><span class="t">'+r.s+'</span><span class="n">'+(n||'')+'</span></button>'}).join('')+'</div>'+
    (p.tip?'<div class="tip"><div class="label">촬영 팁</div>'+esc(p.tip)+'</div>':'')+
    cmtHtml(p)+'<button class="link report" id="reportBtn">신고하기</button>'+
    (p.authorId&&p.authorId===myId&&realId?'<button class="link report" id="editBtn">'+(editId===p.id?'수정 닫기':'이 레시피 수정')+'</button>'+(editId===p.id?editHtml(p):''):'')+
@@ -678,7 +677,7 @@ $('#sheetBody').addEventListener('click',e=>{const p=byId(openId);if(!p)return;
   const r=e.target.closest('.react');
   if(r&&!realId){toast('로그인하면 반응을 남길 수 있어요');login();return}
   if(r){const k=r.dataset.k;const was=!!(mine[p.id]||{})[k];mine[p.id]={go:false,color:false,comp:false,gear:false};if(!was)mine[p.id][k]=true;save('cn_reacts',mine);pushReact(p.id);
-    document.querySelectorAll('#reactPanel .react').forEach(b=>{const kk=b.dataset.k;b.setAttribute('aria-pressed',!!mine[p.id][kk]);b.querySelector('.n').textContent=count(p,kk)});$('#reactSum').innerHTML=reactSummary(p);
+    document.querySelectorAll('#reactPanel .react').forEach(b=>{const kk=b.dataset.k;b.setAttribute('aria-pressed',!!mine[p.id][kk]);b.querySelector('.n').textContent=count(p,kk)||''});
     if(k==='go'&&mine[p.id][k])toast('보관함의 "가보고 싶은 곳"에 추가했어요');return}
   if(e.target.id==='editBtn'){if(editId===p.id){editId=null}else{editId=p.id;ed={tod:p.tod,wx:new Set(p.wx||[]),acc:new Set(p.acc||[])}}reopen(p.id);if(editId)$('#postEdit').scrollIntoView({block:'start',behavior:'smooth'});return}
   if(e.target.id==='delBtn'){const b=e.target;if(!b.dataset.arm){b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제돼요';return}deletePost(p);return}
@@ -1065,11 +1064,12 @@ async function addComment(p,text,re){const path='cmts/'+myId;const items=await r
   const l=(cmtsByPost[p.id]=cmtsByPost[p.id]||[]);if(!l.some(x=>x.id===c.id))l.push(Object.assign({},c,{uid:myId}))}
 async function deleteComment(id,uid){const path='cmts/'+uid;const items=await readItems(path);await db.doc(path).set({items:items.filter(x=>x.id!==id)});
   Object.keys(cmtsByPost).forEach(k=>cmtsByPost[k]=cmtsByPost[k].filter(x=>x.id!==id))}
+let cmtSending=false;
 function reopen(id){const st=$('#sheet').scrollTop;openDetail(id);$('#sheet').scrollTop=st}
 $('#sheetBody').addEventListener('click',async e=>{const p=byId(openId);if(!p)return;const t=e.target;
   if(t.dataset.prof){const u=t.dataset.prof;closeDetail();openProfile(u);return}
-  if(t.id==='cmtSend'){const text=($('#cmtIn').value||'').trim();if(!text){$('#cmtIn').focus();return}t.disabled=true;t.textContent='등록 중…';
-    try{await addComment(p,text,replyTo&&replyTo.id);replyTo=null;$('#cmtIn').value='';toast('등록했어요')}catch(err){toast('댓글을 등록하지 못했어요')}
+  if(t.id==='cmtSend'){if(cmtSending)return;const text=($('#cmtIn').value||'').trim();if(!text){$('#cmtIn').focus();return}cmtSending=true;$('#cmtIn').value='';t.disabled=true;t.textContent='등록 중…';
+    try{await addComment(p,text,replyTo&&replyTo.id);replyTo=null;toast('등록했어요')}catch(err){toast('댓글을 등록하지 못했어요');if($('#cmtIn'))$('#cmtIn').value=text}finally{cmtSending=false}
     reopen(p.id);renderFeed();return}
   if(t.dataset.cr){replyTo={id:t.dataset.cr,name:t.dataset.cn};reopen(p.id);if($('#cmtIn'))$('#cmtIn').focus();return}
   if(t.id==='replyCancel'){replyTo=null;reopen(p.id);return}
@@ -1120,7 +1120,7 @@ async function connect(){
     remoteCounts=c;svCounts=sv;myRaw=raw;reactsLoaded=true;mine=realId?m:{};rerender();syncSv()},()=>{});
   db.collection('cmts').limit(1000).onSnapshot(snap=>{const by={};
     snap.docs.forEach(d=>{((d.data()||{}).items||[]).forEach(c=>{if(!c||!c.post||!c.text||!c.id)return;(by[c.post]=by[c.post]||[]).push(Object.assign({},c,{uid:d.id}))})});
-    Object.values(by).forEach(l=>l.sort((a,b)=>(a.at||0)-(b.at||0)));cmtsByPost=by;rerender()},()=>{});
+    Object.keys(by).forEach(k=>{const l=by[k].sort((a,b)=>(a.at||0)-(b.at||0));by[k]=l.filter((c,i)=>!l.slice(0,i).some(x=>x.uid===c.uid&&x.text===c.text&&(x.re||'')===(c.re||'')&&Math.abs((c.at||0)-(x.at||0))<10000))});cmtsByPost=by;rerender()},()=>{});
   db.collection('profiles').limit(1000).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{const x=d.data()||{};o[d.id]={bio:String(x.bio||'').slice(0,80),gear:String(x.gear||'').slice(0,80)};if(x.name)names[d.id]=String(x.name).slice(0,20)});profileData=o;rerender()},()=>{});
   if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}savedLoaded=true;syncSv()},()=>{});
   if(iAmOwner)db.collection('reports').limit(500).onSnapshot(snap=>{const by={};reportDocs=[];
