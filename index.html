@@ -196,6 +196,7 @@ details.more[open] summary{margin-bottom:12px}
 .mod{background:var(--surface);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
 .mod-top{display:flex;gap:12px;align-items:center}
 .mod-top img{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none}
+.mod>.txt{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
 .mod-top .txt{min-width:0;display:grid;gap:2px}
 .mod-act{display:flex;flex-wrap:wrap;gap:4px 14px}
 .cmts{margin-top:18px;display:grid;gap:8px}
@@ -205,6 +206,7 @@ details.more[open] summary{margin-bottom:12px}
 .cmt-h{display:flex;gap:6px;align-items:center;font-size:13px;flex-wrap:wrap}
 .cmt-t{white-space:pre-wrap;word-break:break-word;font-size:14px}
 .cmt-a{display:flex;gap:14px}
+.cmt-a .link.muted{color:var(--muted);font-weight:500;margin-left:auto}
 .cmt-a .link{font-size:12.5px;padding:0}
 .cmt-form{display:grid;gap:8px;margin-top:4px}
 .cmt-form textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
@@ -599,9 +601,20 @@ function showMapList(ps){if(ps.length===1){openDetail(ps[0].id);return}
   $('#mapList').scrollIntoView({block:'nearest',behavior:'smooth'})}
 document.querySelector('.viewsw').onclick=e=>{const b=e.target.closest('[data-view]');if(!b)return;state.view=b.dataset.view;
   document.querySelectorAll('.viewsw [data-view]').forEach(x=>x.setAttribute('aria-selected',x===b));renderFeed()};
+/* 검색어 정리: 대소문자·띄어쓰기·기호 무시, 로마숫자(II·III·IV)=숫자, 한글 브랜드명=영문 */
+const KO_EN=[['후지필름','fujifilm'],['니콘','nikon'],['캐논','canon'],['소니','sony'],['후지','fuji'],['갤럭시','galaxy'],['아이폰','iphone'],['픽셀','pixel'],['라이카','leica'],['올림푸스','olympus'],['파나소닉','panasonic'],['루믹스','lumix'],['리코','ricoh'],['펜탁스','pentax'],['시그마','sigma'],['탐론','tamron'],['삼양','samyang'],['핫셀블라드','hasselblad'],['블랙','black'],['미스트','mist'],['디퓨전','diffusion'],['마크','mk']];
+const ROM={ii:'2',iii:'3',iv:'4'};
+function normQ(t){let x=String(t||'').toLowerCase();KO_EN.forEach(([k,e])=>{x=x.split(k).join(' '+e+' ')});
+  x=x.replace(/mark\s*/g,'mk').replace(/\b(iii|ii|iv)\b/g,m=>ROM[m]).replace(/([a-z0-9])(iii|ii|iv)\b/g,(m,a,r)=>a+ROM[r]);return x}
+function squash(x){return x.replace(/[\s\-_.·,/()'"]+/g,'')}
+const hayCache=new Map();
+function hayOf(p){const key=p.id+'|'+(p.editedAt||'')+'|'+(names[p.authorId]||'');let h=hayCache.get(key);
+  if(!h){h=squash(normQ([p.title,placeTxt(p),p.body,DEV[p.dev]||'',p.lens,(p.acc||[]).join(' '),p.accMore,TOD[p.tod]||'',(p.wx||[]).join(' '),p.edit,authorName(p)].join(' ')));hayCache.set(key,h)}return h}
+function qMatch(p,qn){if(!qn)return true;const h=hayOf(p);const all=squash(qn);if(h.includes(all))return true;
+  const toks=qn.split(/\s+/).map(squash).filter(Boolean);return toks.length>1&&toks.every(t=>h.includes(t))}
 function renderFeed(){
-  const q=state.q.trim().toLowerCase();
-  const list=all().filter(p=>devMatch(p)&&(state.tod==='all'||p.tod===state.tod)&&(!state.wx||(p.wx||[]).includes(state.wx))&&(!q||[p.title,placeTxt(p),p.body,DEV[p.dev]||'',p.lens,(p.acc||[]).join(' '),p.accMore].join(' ').toLowerCase().includes(q)));
+  const qn=normQ(state.q).trim();
+  const list=all().filter(p=>devMatch(p)&&(state.tod==='all'||p.tod===state.tod)&&(!state.wx||(p.wx||[]).includes(state.wx))&&qMatch(p,qn));
   lastList=list;const isMap=state.view==='map';$('#feed').hidden=isMap;$('#mapBox').hidden=!isMap;
   if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;$('#feedEmpty').textContent=all().length?'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.':'아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
 }
@@ -1016,25 +1029,42 @@ async function migrateLocal(){if(!localPosts.length||!realId||!assets)return;let
 
 /* 신고 */
 const REASONS=['AI 생성 이미지','남의 사진 도용','부적절한 내용','위치 노출 우려'];
+const CREASONS=['욕설·비하','스팸·광고','개인정보 노출','기타 부적절'];
+async function sendCmtReport(p,c,reason){
+  if(!realId){toast('로그인한 상태에서만 신고할 수 있어요');return}
+  try{const path='reports/'+myId;const items=(await readItems(path)).filter(x=>x.cmt!==c.id);
+    items.unshift({post:p.id,cmt:c.id,cuid:c.uid,text:String(c.text||'').slice(0,120),title:String(p.title||'').slice(0,60),reason,at:Date.now()});
+    await db.doc(path).set({items:items.slice(0,200)});toast('댓글을 신고했어요. 운영자가 확인할게요')}
+  catch(e){toast('신고를 보내지 못했어요')}}
 async function sendReport(p,reason){
   if(mode!=='shared'||!realId){toast('로그인한 상태에서만 신고할 수 있어요');return}
-  try{const path='reports/'+myId;const items=(await readItems(path)).filter(x=>x.post!==p.id);
+  try{const path='reports/'+myId;const items=(await readItems(path)).filter(x=>x.cmt||x.post!==p.id);
     items.unshift({post:p.id,author:p.authorId||'',title:String(p.title||'').slice(0,60),reason,at:Date.now()});
     await db.doc(path).set({items:items.slice(0,200)});toast('신고했어요. 운영자가 확인할게요')}
   catch(e){toast('신고를 보내지 못했어요')}}
 
 /* 운영자 화면: 신고 모아보기 */
-let reportsByPost={},reportDocs=[],iAmOwner=false;
+let cmtReports={},reportsByPost={},reportDocs=[],iAmOwner=false;
 function renderMod(){const box=$('#modBox');if(!iAmOwner){box.hidden=true;return}box.hidden=false;
   const list=Object.entries(reportsByPost).sort((a,b)=>b[1].n-a[1].n);
-  if(!list.length){$('#modList').innerHTML='<p class="empty">들어온 신고가 없어요.</p>';return}
-  $('#modList').innerHTML=list.map(([pid,r])=>{const p=byId(pid);const why=Object.entries(r.why).map(([k,n])=>k+' '+n).join(', ');
+  const clist=Object.entries(cmtReports).sort((a,b)=>b[1].n-a[1].n);
+  if(!list.length&&!clist.length){$('#modList').innerHTML='<p class="empty">들어온 신고가 없어요.</p>';return}
+  const chtml=clist.map(([cid,r])=>{const why=Object.entries(r.why).map(([k,n])=>k+' '+n).join(', ');const alive=(cmtsByPost[r.post]||[]).some(x=>x.id===cid);
+    return'<div class="mod"><div class="txt"><b>💬 '+esc(r.text||'(내용 없음)')+'</b><span class="mini">'+esc(names[r.cuid]||'회원')+' · 신고 '+r.n+'건 · '+esc(why)+(alive?'':' · 이미 삭제됨')+'</span></div>'+
+    '<div class="mod-act">'+(byId(r.post)?'<button class="link" data-mod="open" data-id="'+esc(r.post)+'">사진 보기</button>':'')+(alive?'<button class="link danger" data-mod="cdel" data-id="'+esc(cid)+'" data-cu="'+esc(r.cuid)+'">댓글 삭제</button>':'')+'<button class="link" data-mod="cok" data-id="'+esc(cid)+'">'+(alive?'문제없음 (신고 닫기)':'신고 닫기')+'</button></div></div>'}).join('');
+  $('#modList').innerHTML=chtml+list.map(([pid,r])=>{const p=byId(pid);const why=Object.entries(r.why).map(([k,n])=>k+' '+n).join(', ');
     return'<div class="mod"><div class="mod-top">'+(p?'<img src="'+(p.thumb||p.img)+'" alt="" loading="lazy">':'')+'<div class="txt"><b>'+esc(p?p.title:r.title||'삭제된 사진')+'</b><span class="mini">신고 '+r.n+'건 · '+esc(why)+'</span></div></div>'+
     '<div class="mod-act">'+(p?'<button class="link" data-mod="open" data-id="'+esc(pid)+'">사진 보기</button><button class="link danger" data-mod="del" data-id="'+esc(pid)+'">사진 삭제</button>':'')+'<button class="link" data-mod="ok" data-id="'+esc(pid)+'">문제없음 (신고 닫기)</button></div></div>'}).join('')}
-async function dismissReports(pid,quiet){
-  try{for(const d of reportDocs){if(!d.items.some(x=>x.post===pid))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.post!==pid)})}
+async function dismissCmtReports(cid,quiet){
+  try{for(const d of reportDocs){if(!d.items.some(x=>x.cmt===cid))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.cmt!==cid)})}
     if(!quiet)toast('신고를 닫았어요')}catch(e){if(!quiet)toast('신고를 닫지 못했어요')}}
-$('#modList').addEventListener('click',e=>{const b=e.target.closest('[data-mod]');if(!b)return;const id=b.dataset.id;
+async function dismissReports(pid,quiet){
+  try{for(const d of reportDocs){if(!d.items.some(x=>x.post===pid&&!x.cmt))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.cmt||x.post!==pid)})}
+    if(!quiet)toast('신고를 닫았어요')}catch(e){if(!quiet)toast('신고를 닫지 못했어요')}}
+$('#modList').addEventListener('click',async e=>{const b=e.target.closest('[data-mod]');if(!b)return;const id=b.dataset.id;
+  if(b.dataset.mod==='cok'){dismissCmtReports(id);return}
+  if(b.dataset.mod==='cdel'){if(!b.dataset.arm){b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제돼요';return}
+    try{await deleteComment(id,b.dataset.cu);await dismissCmtReports(id,true);toast('댓글을 삭제했어요');renderMod()}catch(err){toast('삭제하지 못했어요')}return}
   if(b.dataset.mod==='open')openDetail(id);
   else if(b.dataset.mod==='ok')dismissReports(id);
   else if(b.dataset.mod==='del'){if(!b.dataset.arm){b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제돼요';return}const p=byId(id);if(p)deletePost(p)}});
@@ -1052,7 +1082,7 @@ function cmtCount(pid){return(cmtsByPost[pid]||[]).length}
 function ago(t){const m=Math.round((Date.now()-t)/60000);if(m<1)return'방금';if(m<60)return m+'분 전';const h=Math.round(m/60);if(h<24)return h+'시간 전';const d=Math.round(h/24);if(d<30)return d+'일 전';return new Date(t).toLocaleDateString('ko-KR')}
 function cmtHtml(p){const list=cmtsByPost[p.id]||[];const ids=new Set(list.map(c=>c.id));const top=list.filter(c=>!c.re||!ids.has(c.re));
   const who=c=>c.uid===myId?'나':(names[c.uid]||'회원');
-  const one=(c,r)=>'<div class="cmt'+(r?' reply':'')+'"><div class="cmt-h"><b>'+esc(who(c))+'</b>'+(c.uid===p.authorId?'<span class="auto-tag">작성자</span>':'')+'<span class="mini">'+ago(c.at)+'</span></div><div class="cmt-t">'+esc(c.text)+'</div><div class="cmt-a">'+(r?'':'<button type="button" class="link" data-cr="'+esc(c.id)+'" data-cn="'+esc(who(c))+'">답글</button>')+((c.uid===myId||iCanEdit)?'<button type="button" class="link danger" data-cd="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">삭제</button>':'')+'</div></div>';
+  const one=(c,r)=>'<div class="cmt'+(r?' reply':'')+'"><div class="cmt-h"><b>'+esc(who(c))+'</b>'+(c.uid===p.authorId?'<span class="auto-tag">작성자</span>':'')+'<span class="mini">'+ago(c.at)+'</span></div><div class="cmt-t">'+esc(c.text)+'</div><div class="cmt-a">'+(r?'':'<button type="button" class="link" data-cr="'+esc(c.id)+'" data-cn="'+esc(who(c))+'">답글</button>')+((c.uid===myId||iCanEdit)?'<button type="button" class="link danger" data-cd="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">삭제</button>':'')+(c.uid!==myId&&realId?'<button type="button" class="link muted" data-crep="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">신고</button>':'')+'</div></div>';
   let h=list.length?top.map(c=>one(c,false)+list.filter(x=>x.re===c.id).map(x=>one(x,true)).join('')).join(''):'<p class="section-note">아직 질문이 없어요. 촬영 포인트나 설정이 궁금하면 물어보세요.</p>';
   const can=mode==='shared'&&realId;
   return'<div class="cmts"><h2>질문·댓글'+(list.length?' <span class="mini">'+list.length+'</span>':'')+'</h2>'+h+
@@ -1071,6 +1101,9 @@ $('#sheetBody').addEventListener('click',async e=>{const p=byId(openId);if(!p)re
   if(t.id==='cmtSend'){if(cmtSending)return;const text=($('#cmtIn').value||'').trim();if(!text){$('#cmtIn').focus();return}cmtSending=true;$('#cmtIn').value='';t.disabled=true;t.textContent='등록 중…';
     try{await addComment(p,text,replyTo&&replyTo.id);replyTo=null;toast('등록했어요')}catch(err){toast('댓글을 등록하지 못했어요');if($('#cmtIn'))$('#cmtIn').value=text}finally{cmtSending=false}
     reopen(p.id);renderFeed();return}
+  if(t.dataset.crep){const box=t.closest('.cmt');if(box.querySelector('.reasons'))return;const w=document.createElement('div');w.className='reasons';w.style.justifyContent='flex-start';
+    w.innerHTML='<span class="label">신고 사유</span>'+CREASONS.map(r=>'<button type="button" class="chip" data-creason="'+r+'" data-cid="'+esc(t.dataset.crep)+'" data-cu="'+esc(t.dataset.cu)+'">'+r+'</button>').join('');box.appendChild(w);return}
+  if(t.dataset.creason){const c=(cmtsByPost[p.id]||[]).find(x=>x.id===t.dataset.cid);const w=t.closest('.reasons');if(c)sendCmtReport(p,c,t.dataset.creason);if(w)w.innerHTML='<span class="section-note">신고를 보냈어요.</span>';return}
   if(t.dataset.cr){replyTo={id:t.dataset.cr,name:t.dataset.cn};reopen(p.id);if($('#cmtIn'))$('#cmtIn').focus();return}
   if(t.id==='replyCancel'){replyTo=null;reopen(p.id);return}
   if(t.dataset.cd){if(!t.dataset.arm){t.dataset.arm='1';t.textContent='한 번 더 누르면 삭제';return}
@@ -1124,8 +1157,8 @@ async function connect(){
   db.collection('profiles').limit(1000).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{const x=d.data()||{};o[d.id]={bio:String(x.bio||'').slice(0,80),gear:String(x.gear||'').slice(0,80)};if(x.name)names[d.id]=String(x.name).slice(0,20)});profileData=o;rerender()},()=>{});
   if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}savedLoaded=true;syncSv()},()=>{});
   if(iAmOwner)db.collection('reports').limit(500).onSnapshot(snap=>{const by={};reportDocs=[];
-    snap.docs.forEach(d=>{const items=(d.data()||{}).items||[];reportDocs.push({id:d.id,items});items.forEach(r=>{if(!r||!r.post)return;const o=by[r.post]=by[r.post]||{n:0,why:{},title:r.title};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1})});
-    reportsByPost=by;renderMod()},()=>{});
+    const cb={};snap.docs.forEach(d=>{const items=(d.data()||{}).items||[];reportDocs.push({id:d.id,items});items.forEach(r=>{if(!r||!r.post)return;if(r.cmt){const o=cb[r.cmt]=cb[r.cmt]||{n:0,why:{},post:r.post,cuid:r.cuid,text:r.text};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1;return}const o=by[r.post]=by[r.post]||{n:0,why:{},title:r.title};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1})});
+    reportsByPost=by;cmtReports=cb;renderMod()},()=>{});
   migrateLocal();
 }
 
