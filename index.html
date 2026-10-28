@@ -828,15 +828,25 @@ function sugHtml(raw){const q=norm(raw);let h='';
   return h}
 function drawSug(){const raw=v('#fRegionQ');const box=$('#regionSug');if(!norm(raw)){hideSug();return}
   box.innerHTML=sugHtml(raw);box.hidden=false;$('#fRegionQ').setAttribute('aria-expanded','true')}
+/* 지명 검색(Geocoding): Places 자동완성이 안 되거나 결과가 없을 때 자동으로 대신 찾아요 (해외 지명 한글 입력 포함) */
+async function geoHits(q){const gc=await getGeocoder();if(!gc)return[];
+  try{const {results}=await gc.geocode({address:q});
+    return(results||[]).slice(0,5).map(r=>{const lat=r.geometry.location.lat(),lng=r.geometry.location.lng();const reg=regionOf(r.address_components);const poi=(r.address_components.find(c=>c.types.some(t=>POI.includes(t)))||{}).long_name;
+      return{name:((reg||r.formatted_address)+(poi&&poi!==reg?' · '+poi:'')).slice(0,60),region:(reg||'').slice(0,40),place:poi&&poi!==reg?poi.slice(0,40):'',lat,lng,tz:nearestTz(lat,lng)||undefined,ai:true}})}
+  catch(e){return[]}}
+async function geoFallback(raw,my){const h=await geoHits(raw);if(my!==sugSeq)return;aiHits=h;drawSug()}
 function showSug(){placeHits=[];drawSug();clearTimeout(sugTimer);const raw=v('#fRegionQ');
-  if(!MAPS_KEY||placesBroken||norm(raw).length<2)return;
-  const my=++sugSeq;sugTimer=setTimeout(async()=>{const lib=await getPlaces();if(my!==sugSeq)return;
-    if(!lib){placesBroken=true;drawSug();return}
+  if(!MAPS_KEY||norm(raw).length<2)return;
+  const my=++sugSeq;
+  if(placesBroken){sugTimer=setTimeout(()=>geoFallback(raw,my),350);return}
+  sugTimer=setTimeout(async()=>{const lib=await getPlaces();if(my!==sugSeq)return;
+    if(!lib){placesBroken=true;geoFallback(raw,my);return}
     try{if(!placeToken)placeToken=new lib.AutocompleteSessionToken();
       const r=await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({input:raw,sessionToken:placeToken,language:'ko',region:'kr'});
       if(my!==sugSeq)return;
       placeHits=(r.suggestions||[]).map(x=>x.placePrediction).filter(Boolean).slice(0,6).map(pp=>({pp,main:(pp.mainText&&pp.mainText.text)||pp.text.text,sub:(pp.secondaryText&&pp.secondaryText.text)||''}));
-      drawSug()}catch(e){placesBroken=true;drawSug()}},250)}
+      if(!placeHits.length){geoFallback(raw,my);return}
+      drawSug()}catch(e){placesBroken=true;geoFallback(raw,my)}},250)}
 async function pickPlace(i){const h=placeHits[i];if(!h)return;$('#fRegionQ').value=h.main;hideSug();
   try{const pl=h.pp.toPlace();await pl.fetchFields({fields:['displayName','location','addressComponents','types']});placeToken=null;
     const lat=pl.location.lat(),lng=pl.location.lng();const cs=adaptComps(pl.addressComponents);
@@ -849,14 +859,8 @@ async function pickPlace(i){const h=placeHits[i];if(!h)return;$('#fRegionQ').val
 function setReg(r){up.reg=r;$('#fRegionQ').value=r?r.name:'';hideSug();aiHits=[];placeHits=[];if(r&&!r.free)save('cn_lastReg',r);up.todManual=false;if(r&&r.free)setEdit(true);refreshConfirm()}
 function validTz(tz){try{new Intl.DateTimeFormat('en',{timeZone:tz});return true}catch(e){return false}}
 async function aiFind(btn){const q=v('#fRegionQ');if(!q)return;
-  const gc=await getGeocoder();
-  if(!gc){btn.textContent='지도 검색을 쓸 수 없어요. 그대로 쓰기를 눌러주세요';return}
-  btn.textContent='찾는 중…';btn.disabled=true;
-  try{const {results}=await gc.geocode({address:q});
-    aiHits=(results||[]).slice(0,5).map(r=>{const lat=r.geometry.location.lat(),lng=r.geometry.location.lng();const reg=regionOf(r.address_components);const poi=(r.address_components.find(c=>c.types.some(t=>POI.includes(t)))||{}).long_name;
-      return{name:((reg||r.formatted_address)+(poi&&poi!==reg?' · '+poi:'')).slice(0,60),lat,lng,tz:nearestTz(lat,lng)||undefined,ai:true}});
-    showSug();if(!aiHits.length)toast('지도에서 찾지 못했어요. 그대로 쓰기를 눌러주세요')}
-  catch(e){btn.disabled=false;btn.textContent=e&&e.code==='ZERO_RESULTS'?'지도에서 찾지 못했어요':'찾지 못했어요. 다시 누르기'}}
+  if(!MAPS_KEY){btn.textContent='지도 검색을 쓸 수 없어요. 그대로 쓰기를 눌러주세요';return}
+  btn.textContent='찾는 중…';btn.disabled=true;aiHits=await geoHits(q);drawSug();if(!aiHits.length)toast('지도에서 찾지 못했어요. 그대로 쓰기를 눌러주세요')}
 $('#fRegionQ').addEventListener('input',()=>{up.reg=null;aiHits=[];showSug();refreshConfirm()});
 $('#fRegionQ').addEventListener('focus',()=>{if(v('#fRegionQ')&&!up.reg)showSug()});
 $('#fRegionQ').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const b=$('#regionSug .opt[data-pl],#regionSug .opt[data-k],#regionSug .opt[data-ai]');if(b&&!$('#regionSug').hidden)b.click()}else if(e.key==='Escape')hideSug()});
