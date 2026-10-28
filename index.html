@@ -82,6 +82,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 #locRow .combo{margin-top:6px}
 #locRow input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 #locRow .sug{margin-top:4px}
+.homebox{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .locline{display:flex;gap:8px;align-items:flex-start}.locmain{flex:1;min-width:0}
 .locsel{flex:none;padding:8px 6px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:13px;max-width:116px}
 .locnow{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
@@ -95,6 +96,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card img{display:block;width:100%;height:auto}
 .card .meta{padding:9px 10px 11px;display:grid;gap:4px}
 .card .ttl{font-weight:600;font-size:14px;line-height:1.35}
+.card .by{font-family:var(--f-body);font-size:11.5px}
 .card .plc{color:var(--muted);font-size:12px}
 .mini{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .ex{font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:4px;vertical-align:1px}
@@ -339,6 +341,11 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surfa
       <div class="field"><span class="label">닉네임</span><input id="pfNameIn" maxlength="20" placeholder="다른 사람에게 보이는 이름"></div>
       <div class="field"><span class="label">한 줄 소개</span><input id="pfBioIn" maxlength="80" placeholder="예: 주말마다 경상도 일출 포인트를 찾아다녀요"></div>
       <div class="field"><span class="label">주력 장비</span><input id="pfGearIn" maxlength="80" placeholder="예: Nikon Z 5 · 24-70mm f/4 · 블랙미스트 1/8"></div>
+      <div class="field"><span class="label">🏠 집 근처 자동 비공개</span>
+        <span class="section-note">집 근처에서 찍은 사진은 올릴 때 위치가 자동으로 비공개로 선택돼요. 집 위치는 나만 볼 수 있게 따로 저장돼요.</span>
+        <div class="homebox"><span id="homeState" class="mini"></span>
+          <select id="homeR" class="locsel" aria-label="반경"><option value="1">반경 1km</option><option value="3" selected>반경 3km</option><option value="5">반경 5km</option></select></div>
+        <div class="homebox"><button type="button" class="link" id="homeSet">지금 있는 곳을 집으로 설정</button><button type="button" class="link danger" id="homeDel" hidden>해제</button></div></div>
       <button class="primary" type="submit">저장</button>
     </form>
     <div class="stats" id="pfStats"></div>
@@ -511,7 +518,7 @@ $('#fBtn').onclick=()=>togglePanel($('#fPanel').hidden);
 $('#fClose').onclick=()=>togglePanel(false);
 $('#fReset').onclick=()=>{state.dev='all';state.tod='all';state.wx=null;renderFilters();renderFeed()};
 $('#activeF').onclick=e=>{const b=e.target.closest('[data-clear]');if(!b)return;const k=b.dataset.clear;if(k==='dev')state.dev='all';else if(k==='tod')state.tod='all';else state.wx=null;renderFilters();renderFeed()};
-function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div><div class="mini">'+esc(readout(p))+'</div></div></button>'}
+function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div><div class="mini by">'+esc(authorName(p))+'</div><div class="mini">'+esc(readout(p))+'</div></div></button>'}
 function bricks(el,list){if(!list.length){el.innerHTML='';return}
   const n=window.innerWidth>=720?3:2;const cols=Array.from({length:n},()=>({h:0,html:''}));
   list.forEach(p=>{const r=p.w&&p.h?p.h/p.w:1.2;const c=cols.reduce((a,b)=>b.h<a.h-0.01?b:a);c.html+=card(p);c.h+=r+0.45});
@@ -586,7 +593,7 @@ const up={tod:null,todManual:false,wx:new Set(),acc:new Set(),img:null,lat:null,
 function renderUpChips(){
   chipRow($('#fTod'),Object.entries(TOD),v=>up.tod===v,v=>{up.tod=v;up.todManual=true;renderUpChips();refreshConfirm()});
   chipRow($('#fDev'),Object.entries(DEV),v=>up.dev===v,v=>{up.dev=v;up.devAuto=false;renderUpChips();updateGate();refreshConfirm()});
-  $('#fLocSel').value=up.loc;$('#locLvlNote').textContent=LOCNOTE[up.loc];
+  $('#fLocSel').value=up.loc;$('#locLvlNote').textContent=up.homeAuto&&up.loc==='hidden'?'🏠 집 근처에서 찍은 사진이라 자동으로 비공개로 했어요. 바꿔도 돼요.':LOCNOTE[up.loc];
   $('#placeField').hidden=up.loc!=='exact';
   $('#placeNote').textContent=up.lat!=null?'사진의 GPS 좌표로 지도 위치가 표시돼요. 장소 이름은 선택이에요.':(up.reg&&up.reg.ai)?'검색한 장소의 좌표로 지도 위치가 표시돼요.':'이 사진엔 GPS가 없어서, 적어주신 장소 이름으로 지도 검색 링크를 만들어요.';
   chipRow($('#fWx'),WX.map(w=>[w,w]),v=>up.wx.has(v),v=>{up.wx.has(v)?up.wx.delete(v):up.wx.add(v);renderUpChips()});
@@ -695,6 +702,7 @@ function refreshConfirm(){
     row('렌즈',v('#fLens')?esc(v('#fLens')):up.dev==='phone'?'<span class="muted">내장 카메라</span>':miss)+
     row('촬영 시각',d?esc(v('#fDate'))+' '+esc(v('#fTime')):miss);
   renderLoc();
+  if(!up.locManual){const nh=nearHome();if(nh&&up.loc!=='hidden'){up.loc='hidden';up.homeAuto=true}else if(!nh&&up.homeAuto){up.loc='region';up.homeAuto=false}renderUpChips()}
   $('#cRowsB').innerHTML=
     row('시간대',(up.tod?todPill(up.tod)+(up.todManual?' <span class="auto-tag">직접 수정</span>':' <span class="auto-tag">자동</span>'):miss)+(sn?'<div class="sunnote">'+esc(sn)+'</div>':''));
   const m=[];if(!v('#fBody'))m.push('카메라');if(!v('#fLens')&&up.dev!=='phone')m.push('렌즈');if(!v('#fF')&&!v('#fS'))m.push('노출값');if(!d)m.push('촬영 시각');
@@ -709,7 +717,7 @@ function updateGate(){let msg='';
   else if(up.img&&up.noCam&&up.dev!=='film')msg='카메라 촬영 정보(EXIF)가 없어서 올릴 수 없어요. 카메라나 휴대폰에서 옮긴 원본 파일로 다시 골라주세요. 필름 스캔본이라면 촬영 기기에서 "필름 카메라"를 고르세요.';
   $('#aiBlock').hidden=!msg;$('#aiBlock').textContent=msg;$('#upBtn').disabled=!!msg;return!msg}
 function setEdit(open){$('#editBox').hidden=!open;$('#editToggle').textContent=open?'접기':'수정';$('#editToggle').setAttribute('aria-expanded',open)}
-$('#fLocSel').onchange=e=>{up.loc=e.target.value;renderUpChips()};
+$('#fLocSel').onchange=e=>{up.loc=e.target.value;up.locManual=true;up.homeAuto=false;renderUpChips()};
 $('#upCancel').onclick=()=>{if(up.img&&!$('#upCancel').dataset.arm){$('#upCancel').dataset.arm='1';$('#upCancel').textContent='한 번 더 누르면 취소';setTimeout(()=>{delete $('#upCancel').dataset.arm;$('#upCancel').textContent='← 취소'},3000);return}
   delete $('#upCancel').dataset.arm;$('#upCancel').textContent='← 취소';resetUpload();go('explore')};
 $('#editToggle').onclick=()=>setEdit($('#editBox').hidden);
@@ -718,7 +726,7 @@ function downscale(file){return new Promise((res,rej)=>{const fr=new FileReader(
   while(w/2>=tw&&h/2>=th){const t=document.createElement('canvas');t.width=Math.round(w/2);t.height=Math.round(h/2);const x=t.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(src,0,0,t.width,t.height);src=t;w=t.width;h=t.height}
   const c=document.createElement('canvas');c.width=tw;c.height=th;const cx=c.getContext('2d');cx.imageSmoothingQuality='high';cx.drawImage(src,0,0,tw,th);res(c.toDataURL('image/jpeg',.92))};im.onerror=rej;im.src=fr.result};fr.onerror=rej;fr.readAsDataURL(file)})}
 
-function resetUpload(){$('#upForm').reset();Object.assign(up,{gpsName:null,gpsLookup:null,gps:null,gpsStripped:false,tzOff:null,tod:null,todManual:false,img:null,lat:null,lng:null,dev:null,devAuto:false,loc:'region',ai:false,noCam:false});$('#aiBlock').hidden=true;$('#upBtn').disabled=false;up.wx.clear();up.acc.clear();
+function resetUpload(){$('#upForm').reset();Object.assign(up,{locManual:false,homeAuto:false,gpsName:null,gpsLookup:null,gps:null,gpsStripped:false,tzOff:null,tod:null,todManual:false,img:null,lat:null,lng:null,dev:null,devAuto:false,loc:'region',ai:false,noCam:false});$('#aiBlock').hidden=true;$('#upBtn').disabled=false;up.wx.clear();up.acc.clear();
   up.reg=null;$('#fRegionQ').value='';aiHits=[];placeHits=[];hideSug();$('#accBox').open=false;renderUpChips();setEdit(false);
   $('#preview').hidden=true;$('#dropText').hidden=false;$('#afterPick').hidden=true}
 
@@ -737,7 +745,7 @@ function overrideGps(){up.gps=[up.lat,up.lng];up.lat=up.lng=null;up.reg=null;$('
 function restoreGps(){if(!up.gps)return;[up.lat,up.lng]=up.gps;up.gps=null;$('#gpsBack').hidden=true;hideSug();up.todManual=false;renderUpChips();refreshConfirm()}
 $('#locNow').addEventListener('click',e=>{if(e.target.closest('[data-act="editloc"]'))overrideGps()});
 $('#gpsBack').addEventListener('click',restoreGps);
-$('#file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;up.gps=null;up.gpsName=null;up.gpsLookup=null;$('#fPlace').value='';$('#gpsBack').hidden=true;
+$('#file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;up.locManual=false;up.homeAuto=false;up.loc='region';up.gps=null;up.gpsName=null;up.gpsLookup=null;$('#fPlace').value='';$('#gpsBack').hidden=true;
   try{up.img=await downscale(f)}catch(err){toast('이 사진을 열 수 없어요. JPG나 PNG로 다시 골라주세요.');return}
   $('#preview').src=up.img;$('#preview').hidden=false;$('#dropText').hidden=true;
   ['#fBody','#fLens','#fFocal','#fF','#fS','#fIso','#fDate','#fTime'].forEach(s=>$(s).value='');
@@ -852,7 +860,19 @@ function setModeBar(){const m=$('#modeBar');
 function pushReact(pid){if(mode!=='shared'||!realId)return;const m={};
   Object.entries(mine).forEach(([k,o])=>{if(o&&(o.go||o.color||o.comp||o.gear))m[k]={go:!!o.go,color:!!o.color,comp:!!o.comp,gear:!!o.gear}});
   db.doc('reacts/'+myId).set({m}).catch(()=>toast('반응을 저장하지 못했어요'))}
-function pushSaved(){if(mode!=='shared'||!realId)return;db.doc('saved/'+myId).set({ids:[...saved]}).catch(()=>toast('보관함을 저장하지 못했어요'))}
+let myHome=null;
+function renderHome(){if(!$('#homeState'))return;$('#homeState').textContent=myHome?'설정됨 · 반경 '+myHome.r+'km':'설정 안 됨';$('#homeDel').hidden=!myHome;$('#homeR').value=String(myHome?myHome.r:3)}
+function saveHome(h){if(!realId)return Promise.reject();return db.doc('saved/'+myId).set({home:h},{merge:true})}
+$('#homeSet').onclick=()=>{if(!navigator.geolocation){toast('이 브라우저에서는 위치를 가져올 수 없어요');return}
+  const b=$('#homeSet');b.textContent='위치 확인 중…';
+  navigator.geolocation.getCurrentPosition(async pos=>{b.textContent='지금 있는 곳을 집으로 설정';
+    const h={lat:Math.round(pos.coords.latitude*1000)/1000,lng:Math.round(pos.coords.longitude*1000)/1000,r:+$('#homeR').value};
+    try{await saveHome(h);myHome=h;renderHome();toast('집 근처 자동 비공개를 켰어요')}catch(e){toast('저장하지 못했어요')}},
+   ()=>{b.textContent='지금 있는 곳을 집으로 설정';toast('위치 권한을 허용해야 설정할 수 있어요')},{enableHighAccuracy:false,timeout:15000})};
+$('#homeDel').onclick=async()=>{try{await saveHome(null);myHome=null;renderHome();toast('해제했어요')}catch(e){toast('해제하지 못했어요')}};
+$('#homeR').onchange=async()=>{if(!myHome)return;const h=Object.assign({},myHome,{r:+$('#homeR').value});try{await saveHome(h);myHome=h;renderHome()}catch(e){}};
+function nearHome(){const c=upCoords();return !!(myHome&&c&&dist(c[0],c[1],myHome.lat,myHome.lng)<=myHome.r)}
+function pushSaved(){if(mode!=='shared'||!realId)return;db.doc('saved/'+myId).set({ids:[...saved]},{merge:true}).catch(()=>toast('보관함을 저장하지 못했어요'))}
 async function readItems(path){const s=await db.doc(path).get();const d=s.exists?s.data():null;return d&&Array.isArray(d.items)?d.items:[]}
 async function deletePost(p){
   if(mode==='shared'&&p.authorId){try{const path='posts/'+p.authorId;const items=(await readItems(path)).filter(x=>x.id!==p.id);await db.doc(path).set({items});
@@ -946,7 +966,7 @@ let realId=false,authReady=false;
 /* Firestore를 프로토타입과 같은 모양(db.doc / db.collection)으로 감싸요 */
 function wrapSnap(s){return{id:s.id,exists:s.exists(),data:()=>s.data()}}
 const fdb={
-  doc:p=>{const r=doc(fs,p);return{set:d=>setDoc(r,d),get:async()=>wrapSnap(await getDoc(r)),onSnapshot:(cb,er)=>onSnapshot(r,s=>cb(wrapSnap(s)),er)}},
+  doc:p=>{const r=doc(fs,p);return{set:(d,o)=>setDoc(r,d,o||{}),get:async()=>wrapSnap(await getDoc(r)),onSnapshot:(cb,er)=>onSnapshot(r,s=>cb(wrapSnap(s)),er)}},
   collection:c=>({limit:n=>({onSnapshot:(cb,er)=>onSnapshot(query(collection(fs,c),limit(n)),s=>cb({docs:s.docs.map(wrapSnap)}),er)})})};
 /* 사진은 Storage의 images/<내 uid>/ 아래에 저장 */
 const fassets={
@@ -984,7 +1004,7 @@ async function connect(){
     snap.docs.forEach(d=>{((d.data()||{}).items||[]).forEach(c=>{if(!c||!c.post||!c.text||!c.id)return;(by[c.post]=by[c.post]||[]).push(Object.assign({},c,{uid:d.id}))})});
     Object.values(by).forEach(l=>l.sort((a,b)=>(a.at||0)-(b.at||0)));cmtsByPost=by;rerender()},()=>{});
   db.collection('profiles').limit(1000).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{const x=d.data()||{};o[d.id]={bio:String(x.bio||'').slice(0,80),gear:String(x.gear||'').slice(0,80)};if(x.name)names[d.id]=String(x.name).slice(0,20)});profileData=o;rerender()},()=>{});
-  if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}},()=>{});
+  if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}},()=>{});
   if(iAmOwner)db.collection('reports').limit(500).onSnapshot(snap=>{const by={};reportDocs=[];
     snap.docs.forEach(d=>{const items=(d.data()||{}).items||[];reportDocs.push({id:d.id,items});items.forEach(r=>{if(!r||!r.post)return;const o=by[r.post]=by[r.post]||{n:0,why:{},title:r.title};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1})});
     reportsByPost=by;renderMod()},()=>{});
