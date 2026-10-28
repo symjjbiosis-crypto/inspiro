@@ -96,7 +96,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card img{display:block;width:100%;height:auto}
 .card .meta{padding:9px 10px 11px;display:grid;gap:4px}
 .card .ttl{font-weight:600;font-size:14px;line-height:1.35}
-.card .by{font-family:var(--f-body);font-size:11.5px}
+.card .ttlrow{display:flex;align-items:baseline;gap:6px}.card .ttlrow .ttl{flex:1;min-width:0}
+.card .by{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--f-body);font-size:11.5px}
+.card .cam{font-family:var(--f-body);font-size:11.5px}
 .card .plc{color:var(--muted);font-size:12px}
 .mini{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .ex{font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:4px;vertical-align:1px}
@@ -546,7 +548,7 @@ $('#fClose').onclick=()=>togglePanel(false);
 $('#fReset').onclick=()=>{state.dev='all';state.tod='all';state.wx=null;renderFilters();renderFeed()};
 $('#activeF').onclick=e=>{const b=e.target.closest('[data-clear]');if(!b)return;const k=b.dataset.clear;if(k==='dev')state.dev='all';else if(k==='tod')state.tod='all';else state.wx=null;renderFilters();renderFeed()};
 function topReact(p){let best=null,bn=0;REACT.forEach(r=>{const n=count(p,r.k);if(n>bn){bn=n;best=r}});return best?'<span class="mini top" title="'+best.l.slice(best.l.indexOf(' ')+1)+'">'+best.l.split(' ')[0]+' '+bn+'</span>':''}
-function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+topReact(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div><div class="mini by">'+esc(authorName(p))+'</div><div class="mini">'+esc(readout(p))+'</div></div></button>'}
+function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+topReact(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttlrow"><span class="ttl">'+esc(p.title)+'</span><span class="mini by">'+esc(authorName(p))+'</span></div><div class="plc">'+esc(placeTxt(p))+'</div>'+(p.body?'<div class="mini cam">'+esc(p.body)+'</div>':'')+'<div class="mini">'+esc(readout(p))+'</div></div></button>'}
 function bricks(el,list){if(!list.length){el.innerHTML='';return}
   const n=window.innerWidth>=720?3:2;const cols=Array.from({length:n},()=>({h:0,html:''}));
   list.forEach(p=>{const r=p.w&&p.h?p.h/p.w:1.2;const c=cols.reduce((a,b)=>b.h<a.h-0.01?b:a);c.html+=card(p);c.h+=r+0.45});
