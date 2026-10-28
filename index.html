@@ -83,8 +83,14 @@ button,input,select,textarea{font:inherit;color:inherit}
 #locRow .combo{margin-top:6px}
 #locRow input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 #locRow .sug{margin-top:4px}
+.sortrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
+.sortrow .viewsw{margin-top:0}
+.sortsw{display:flex;gap:2px;background:var(--surface);border-radius:9px;padding:3px}
+.sortsw button{border:0;background:none;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+.sortsw button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+#sortNote{margin:6px 0 0}
 .viewsw{display:inline-grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--surface);border-radius:9px;padding:3px;margin-top:10px}
-.viewsw button{border:0;background:none;border-radius:7px;padding:6px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+.viewsw button{border:0;background:none;border-radius:7px;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
 .viewsw button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
 #map{height:62vh;min-height:320px;border-radius:12px;margin-top:10px;background:var(--surface)}
 #mapList{margin-top:8px}
@@ -283,7 +289,9 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surfa
       <div class="ffoot"><button type="button" class="link" id="fReset">전체 초기화</button><button type="button" class="link" id="fClose">닫기</button></div>
     </div>
     <div class="active-f" id="activeF"></div>
-    <div class="viewsw" role="tablist" aria-label="보기 방식"><button type="button" role="tab" data-view="list" aria-selected="true">목록</button><button type="button" role="tab" data-view="map" aria-selected="false">지도</button></div>
+    <div class="sortrow"><div class="sortsw" id="sortSw" role="tablist" aria-label="정렬"><button type="button" data-sort="rec" aria-selected="true">추천</button><button type="button" data-sort="new" aria-selected="false">최신</button><button type="button" data-sort="top" aria-selected="false">인기</button><button type="button" data-sort="near" aria-selected="false">근처</button></div>
+<div class="viewsw" role="tablist" aria-label="보기 방식"><button type="button" role="tab" data-view="list" aria-selected="true">목록</button><button type="button" role="tab" data-view="map" aria-selected="false">지도</button></div></div>
+    <p class="section-note" id="sortNote" hidden></p>
     <div id="mapBox" hidden><div id="map"></div><p class="section-note" id="mapNote"></p><div class="place-list" id="mapList"></div></div>
     <div class="grid" id="feed"></div>
     <p class="empty" id="feedEmpty" hidden>조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.</p>
@@ -539,7 +547,7 @@ function authorName(p){if(p.author)return p.author;if(p.authorId&&p.authorId===m
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2400)}
 
 /* ---------- 탐색 ---------- */
-const state={dev:'all',tod:'all',wx:null,q:'',view:'list'};let lastList=[];
+const state={dev:'all',tod:'all',wx:null,q:'',view:'list',sort:'rec'};let lastList=[];
 function chipRow(el,items,isOn,onTap){el.innerHTML=items.map(([v,l])=>'<button type="button" class="chip" data-v="'+esc(v)+'" aria-pressed="'+isOn(v)+'">'+esc(l)+'</button>').join('');
   el.onclick=e=>{const b=e.target.closest('.chip');if(b)onTap(b.dataset.v)}}
 const DEVF=[['all','전체'],['camera','미러리스·DSLR'],['mirrorless','미러리스'],['dslr','DSLR'],['phone','스마트폰'],['compact','컴팩트 디카'],['film','필름'],['drone','드론']];
@@ -630,11 +638,39 @@ function didYouMean(q){const ns=squash(normQ(q)),rs=squash(String(q).toLowerCase
   vocab().forEach(o=>{const d=Math.min(fuzzyDist(ns,o.ns),fuzzyDist(rs,o.rs));if(d<=lim&&(!best||d<best.d||(d===best.d&&o.n>best.o.n)))best={d,o}});
   return best?best.o:null}
 function setQuery(t){$('#q').value=t;state.q=t;hideQSug();renderFeed()}
+/* ---------- 정렬 ----------
+   추천: 반응·저장·댓글이 많을수록 위로, 오래될수록 천천히 아래로 (새 사진은 하루 정도 위쪽에 머물러요)
+         같은 사람 사진이 연달아 3장 이상 이어지지 않게 섞어요
+   인기: 기간 상관없이 반응·저장·댓글 많은 순
+   근처: 지금 내 위치에서 가까운 순 (비공개 사진은 맨 뒤) */
+function engage(p){let r=0;REACT.forEach(x=>r+=count(p,x.k));const sv=svCounts[p.id]||0;
+  const cm=new Set((cmtsByPost[p.id]||[]).filter(c=>c.uid!==p.authorId).map(c=>c.uid)).size;return r+sv*2+cm*1.5}
+function ageH(p){return Math.max(0,(Date.now()-(p.createdAt||Number(String(p.id).replace(/\D/g,'').slice(0,13))||Date.now()))/36e5)}
+function recScore(p){return(engage(p)*2+1)/Math.pow(ageH(p)+3,1.2)}
+function diversify(list){const out=[],rest=list.slice();while(rest.length){const a=out.length>=2&&out[out.length-1].authorId&&out[out.length-1].authorId===out[out.length-2].authorId?out[out.length-1].authorId:null;
+    let i=a?rest.findIndex(p=>p.authorId!==a):0;if(i<0)i=0;out.push(rest.splice(i,1)[0])}return out}
+let myPos=null,posAsked=false;
+function askPos(){if(posAsked)return;posAsked=true;if(!navigator.geolocation){sortNote('이 브라우저에서는 위치를 쓸 수 없어요.');return}
+  sortNote('내 위치를 확인하는 중…');
+  navigator.geolocation.getCurrentPosition(pos=>{myPos=[pos.coords.latitude,pos.coords.longitude];sortNote('');renderFeed()},
+    ()=>{posAsked=false;sortNote('위치 권한을 허용하면 가까운 출사지부터 보여드려요.')},{enableHighAccuracy:false,timeout:15000,maximumAge:600000})}
+function sortNote(t){const n=$('#sortNote');n.hidden=!t;n.textContent=t}
+function sortList(list){const k=state.sort;
+  if(k==='new')return list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(k==='top')return list.slice().sort((a,b)=>engage(b)-engage(a)||(b.createdAt||0)-(a.createdAt||0));
+  if(k==='near'){if(!myPos){askPos();return list}
+    const d=p=>{const c=mapCoords(p);return c?dist(myPos[0],myPos[1],c[0],c[1]):1e9};return list.slice().sort((a,b)=>d(a)-d(b))}
+  /* 보는 도중 순서가 바뀌어 사진이 튀지 않게 한 번 정한 순서를 유지 (추천을 다시 누르면 새로 계산) */
+  if(!recRank||!reactsLoaded){const o=diversify(all().slice().sort((a,b)=>recScore(b)-recScore(a)));const r=new Map();o.forEach((p,i)=>r.set(p.id,i));if(reactsLoaded)recRank=r;else return list.slice().sort((a,b)=>r.get(a.id)-r.get(b.id))}
+  const rk=p=>recRank.has(p.id)?recRank.get(p.id):-1e12+ageH(p);return list.slice().sort((a,b)=>rk(a)-rk(b))}
+let recRank=null;
+$('#sortSw').onclick=e=>{const b=e.target.closest('[data-sort]');if(!b)return;state.sort=b.dataset.sort;if(state.sort==='rec')recRank=null;
+  document.querySelectorAll('#sortSw [data-sort]').forEach(x=>x.setAttribute('aria-selected',x===b));if(state.sort!=='near')sortNote('');renderFeed();window.scrollTo({top:0})};
 function renderFeed(){
   const qn=normQ(state.q).trim();
   const list=all().filter(p=>devMatch(p)&&(state.tod==='all'||p.tod===state.tod)&&(!state.wx||(p.wx||[]).includes(state.wx))&&qMatch(p,qn));
-  lastList=list;const isMap=state.view==='map';$('#feed').hidden=isMap;$('#mapBox').hidden=!isMap;
-  if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;{const fe=$('#feedEmpty');if(!all().length)fe.textContent='아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
+  const sorted=state.view==='map'?list:sortList(list);lastList=list;const isMap=state.view==='map';$('#sortSw').hidden=isMap;$('#feed').hidden=isMap;$('#mapBox').hidden=!isMap;
+  if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),sorted);$('#feedEmpty').hidden=list.length>0;{const fe=$('#feedEmpty');if(!all().length)fe.textContent='아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
     else{const dm=!list.length&&state.q.trim()?didYouMean(state.q.trim()):null;
       fe.innerHTML=dm?'"'+esc(state.q.trim())+'"에 맞는 사진이 없어요.<br>혹시 <button type="button" class="link" data-dym="'+esc(dm.t)+'">'+esc(dm.t)+'</button>을(를) 찾으셨나요?':'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.'}}
 }
