@@ -566,7 +566,16 @@ function bricks(el,list){if(!list.length){el.innerHTML='';return}
 let lastCols=window.innerWidth>=720;window.addEventListener('resize',()=>{const c=window.innerWidth>=720;if(c!==lastCols){lastCols=c;renderFeed();renderSaved();renderProfile()}});
 /* 지도: 비공개 사진은 빼고, 지역만 공개는 지역 중심(대략)에 표시 */
 function mapCoords(p){if(p.loc==='hidden')return null;if(p.loc==='exact'&&p.lat!=null)return[p.lat,p.lng];if(p.rlat!=null)return[p.rlat,p.rlng];
-  const r=REGIONS[p.region]||REGIONS[String(p.region||'').split(/\s|·/)[0].trim()];return r||null}
+  const reg=String(p.region||'');const r=REGIONS[reg]||REGIONS[reg.replace(/(시|군)$/,'')]||REGIONS[reg.replace(/\s*·\s*/,' · ').replace(/(시|군)$/,'')]||REGIONS[reg.split(/\s|·/)[0].trim()];
+  return r||geoCache[reg]||null}
+let geoCache={};try{geoCache=JSON.parse(localStorage.getItem('geo_cache')||'{}')||{}}catch(e){}
+let geoBusy=false;
+async function fillRegionCoords(list){if(geoBusy)return;const need=[...new Set(list.filter(p=>p.loc!=='hidden'&&!mapCoords(p)&&p.region&&!(p.region in geoCache)).map(p=>String(p.region)))].slice(0,15);
+  if(!need.length)return;const gc=await getGeocoder();if(!gc)return;geoBusy=true;let got=0;
+  for(const reg of need){try{const {results}=await gc.geocode({address:reg.replace(/\s*·\s*/g,' ')});const r=results&&results[0];
+      geoCache[reg]=r?[Math.round(r.geometry.location.lat()*100)/100,Math.round(r.geometry.location.lng()*100)/100]:null;if(r)got++}catch(e){geoCache[reg]=null}}
+  try{localStorage.setItem('geo_cache',JSON.stringify(geoCache))}catch(e){}
+  geoBusy=false;if(got&&state.view==='map'){mapSig='';renderMap(lastList)}}
 let mapObj=null,mapLib=null,mapMarkers=[],mapSig='';
 async function renderMap(list){const note=$('#mapNote');const m=await loadMaps();
   if(!m){note.textContent='지도를 불러오지 못했어요. 잠시 후 다시 시도해주세요.';return}
@@ -574,6 +583,7 @@ async function renderMap(list){const note=$('#mapNote');const m=await loadMaps()
       mapObj=new Map($('#map'),{center:{lat:36.3,lng:127.8},zoom:6,mapId:'DEMO_MAP_ID',disableDefaultUI:true,zoomControl:true,gestureHandling:'greedy',clickableIcons:false})}}
   catch(e){note.textContent='지도를 불러오지 못했어요.';return}
   const groups={};let off=0;
+  fillRegionCoords(list);
   list.forEach(p=>{const c=mapCoords(p);if(!c){off++;return}const k=c[0].toFixed(3)+','+c[1].toFixed(3);(groups[k]=groups[k]||{c,ps:[]}).ps.push(p)});
   note.textContent=(off?'위치 비공개이거나 위치를 알 수 없는 사진 '+off+'장은 지도에 없어요. ':'')+'지역만 공개한 사진은 그 지역 근처에 대략 표시돼요.';
   const sig=Object.keys(groups).map(k=>k+':'+groups[k].ps.map(p=>p.id).join('.')).join('|');if(sig===mapSig)return;mapSig=sig;
@@ -1052,7 +1062,7 @@ function cmtHtml(p){const list=cmtsByPost[p.id]||[];const ids=new Set(list.map(c
 async function addComment(p,text,re){const path='cmts/'+myId;const items=await readItems(path);
   const c={id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),post:p.id,text:text.slice(0,500),at:Date.now()};if(re)c.re=re;
   await db.doc(path).set({items:items.concat([c]).slice(-300)});
-  (cmtsByPost[p.id]=cmtsByPost[p.id]||[]).push(Object.assign({},c,{uid:myId}))}
+  const l=(cmtsByPost[p.id]=cmtsByPost[p.id]||[]);if(!l.some(x=>x.id===c.id))l.push(Object.assign({},c,{uid:myId}))}
 async function deleteComment(id,uid){const path='cmts/'+uid;const items=await readItems(path);await db.doc(path).set({items:items.filter(x=>x.id!==id)});
   Object.keys(cmtsByPost).forEach(k=>cmtsByPost[k]=cmtsByPost[k].filter(x=>x.id!==id))}
 function reopen(id){const st=$('#sheet').scrollTop;openDetail(id);$('#sheet').scrollTop=st}
