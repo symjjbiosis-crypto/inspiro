@@ -82,6 +82,15 @@ button,input,select,textarea{font:inherit;color:inherit}
 #locRow .combo{margin-top:6px}
 #locRow input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 #locRow .sug{margin-top:4px}
+.viewsw{display:inline-grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--surface);border-radius:9px;padding:3px;margin-top:10px}
+.viewsw button{border:0;background:none;border-radius:7px;padding:6px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+.viewsw button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+#map{height:62vh;min-height:320px;border-radius:12px;margin-top:10px;background:var(--surface)}
+#mapList{margin-top:8px}
+.pin{position:relative;width:46px;height:46px;cursor:pointer}
+.pin .ph{width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);background:#ccc}
+.pin .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.pin b{position:absolute;right:-6px;top:-6px;background:var(--accent);color:var(--accent-ink);font:600 11px/18px var(--f-body);min-width:18px;text-align:center;border-radius:999px;padding:0 5px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .homebox{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .locline{display:flex;gap:8px;align-items:flex-start}.locmain{flex:1;min-width:0}
 .locsel{flex:none;padding:8px 6px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:13px;max-width:116px}
@@ -269,6 +278,8 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surfa
       <div class="ffoot"><button type="button" class="link" id="fReset">전체 초기화</button><button type="button" class="link" id="fClose">닫기</button></div>
     </div>
     <div class="active-f" id="activeF"></div>
+    <div class="viewsw" role="tablist" aria-label="보기 방식"><button type="button" role="tab" data-view="list" aria-selected="true">목록</button><button type="button" role="tab" data-view="map" aria-selected="false">지도</button></div>
+    <div id="mapBox" hidden><div id="map"></div><p class="section-note" id="mapNote"></p><div class="place-list" id="mapList"></div></div>
     <div class="grid" id="feed"></div>
     <p class="empty" id="feedEmpty" hidden>조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.</p>
   </section>
@@ -518,12 +529,12 @@ function locRow(p){const l=p.loc||'region';let v;
   else{v=esc(p.region)+(p.place?' · '+esc(p.place):'');if(p.lat!=null)v+='<div class="sunnote"><a href="https://www.google.com/maps/search/?api=1&query='+p.lat+','+p.lng+'" target="_blank" rel="noopener">지도에서 보기</a></div>';else if(p.place)v+='<div class="sunnote"><a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.region+' '+p.place)+'" target="_blank" rel="noopener">지도에서 찾아보기</a></div>';else v+='<div class="sunnote">장소 이름이 적혀 있지 않아요</div>'}
   return'<div class="row"><div class="k">어디서</div><div class="v">'+v+'</div></div>'}
 function todPill(t){return t?'<span class="tod t-'+t+'">'+TOD[t]+'</span>':''}
-function count(p,k){const base=p.r&&p.r[k]||0;if(mode==='shared')return base+((remoteCounts[p.id]||{})[k]||0);return base+((mine[p.id]||{})[k]?1:0)}
+function count(p,k){const base=p.r&&p.r[k]||0;if(mode==='shared'){const rc=(remoteCounts[p.id]||{})[k]||0;const was=myRaw[p.id]&&myRaw[p.id][k]?1:0;const now=(mine[p.id]||{})[k]?1:0;return base+Math.max(0,rc-was+now)}return base+((mine[p.id]||{})[k]?1:0)}
 function authorName(p){if(p.author)return p.author;if(p.authorId&&p.authorId===myId)return'나';return names[p.authorId]||'회원'}
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2400)}
 
 /* ---------- 탐색 ---------- */
-const state={dev:'all',tod:'all',wx:null,q:''};
+const state={dev:'all',tod:'all',wx:null,q:'',view:'list'};let lastList=[];
 function chipRow(el,items,isOn,onTap){el.innerHTML=items.map(([v,l])=>'<button type="button" class="chip" data-v="'+esc(v)+'" aria-pressed="'+isOn(v)+'">'+esc(l)+'</button>').join('');
   el.onclick=e=>{const b=e.target.closest('.chip');if(b)onTap(b.dataset.v)}}
 const DEVF=[['all','전체'],['camera','미러리스·DSLR'],['mirrorless','미러리스'],['dslr','DSLR'],['phone','스마트폰'],['compact','컴팩트 디카'],['film','필름'],['drone','드론']];
@@ -553,10 +564,36 @@ function bricks(el,list){if(!list.length){el.innerHTML='';return}
   list.forEach(p=>{const r=p.w&&p.h?p.h/p.w:1.2;const c=cols.reduce((a,b)=>b.h<a.h-0.01?b:a);c.html+=card(p);c.h+=r+0.45});
   el.innerHTML=cols.map(c=>'<div class="col">'+c.html+'</div>').join('')}
 let lastCols=window.innerWidth>=720;window.addEventListener('resize',()=>{const c=window.innerWidth>=720;if(c!==lastCols){lastCols=c;renderFeed();renderSaved();renderProfile()}});
+/* 지도: 비공개 사진은 빼고, 지역만 공개는 지역 중심(대략)에 표시 */
+function mapCoords(p){if(p.loc==='hidden')return null;if(p.loc==='exact'&&p.lat!=null)return[p.lat,p.lng];if(p.rlat!=null)return[p.rlat,p.rlng];
+  const r=REGIONS[p.region]||REGIONS[String(p.region||'').split(/\s|·/)[0].trim()];return r||null}
+let mapObj=null,mapLib=null,mapMarkers=[],mapSig='';
+async function renderMap(list){const note=$('#mapNote');const m=await loadMaps();
+  if(!m){note.textContent='지도를 불러오지 못했어요. 잠시 후 다시 시도해주세요.';return}
+  try{if(!mapObj){const {Map}=await m.importLibrary('maps');mapLib=await m.importLibrary('marker');
+      mapObj=new Map($('#map'),{center:{lat:36.3,lng:127.8},zoom:6,mapId:'DEMO_MAP_ID',disableDefaultUI:true,zoomControl:true,gestureHandling:'greedy',clickableIcons:false})}}
+  catch(e){note.textContent='지도를 불러오지 못했어요.';return}
+  const groups={};let off=0;
+  list.forEach(p=>{const c=mapCoords(p);if(!c){off++;return}const k=c[0].toFixed(3)+','+c[1].toFixed(3);(groups[k]=groups[k]||{c,ps:[]}).ps.push(p)});
+  note.textContent=(off?'위치 비공개이거나 위치를 알 수 없는 사진 '+off+'장은 지도에 없어요. ':'')+'지역만 공개한 사진은 그 지역 근처에 대략 표시돼요.';
+  const sig=Object.keys(groups).map(k=>k+':'+groups[k].ps.map(p=>p.id).join('.')).join('|');if(sig===mapSig)return;mapSig=sig;
+  mapMarkers.forEach(x=>x.map=null);mapMarkers=[];$('#mapList').innerHTML='';
+  const gs=Object.values(groups);if(!gs.length)return;const bounds=new google.maps.LatLngBounds();
+  gs.forEach(g=>{const el=document.createElement('div');el.className='pin';const f=g.ps[0];
+    el.innerHTML='<div class="ph"><img src="'+esc(f.thumb||f.img)+'" alt=""></div>'+(g.ps.length>1?'<b>'+g.ps.length+'</b>':'');
+    const mk=new mapLib.AdvancedMarkerElement({map:mapObj,position:{lat:g.c[0],lng:g.c[1]},content:el,title:g.ps.length>1?g.ps.length+'장':f.title});
+    mk.addListener('click',()=>showMapList(g.ps));mapMarkers.push(mk);bounds.extend({lat:g.c[0],lng:g.c[1]})});
+  if(gs.length>1)mapObj.fitBounds(bounds,56);else{mapObj.setCenter({lat:gs[0].c[0],lng:gs[0].c[1]});mapObj.setZoom(11)}}
+function showMapList(ps){if(ps.length===1){openDetail(ps[0].id);return}
+  $('#mapList').innerHTML='<span class="label">이 근처 사진 '+ps.length+'장</span>'+ps.map(p=>'<button class="place" data-id="'+esc(p.id)+'"><img src="'+esc(p.thumb||p.img)+'" alt="" loading="lazy"><div class="txt"><b>'+esc(p.title)+'</b><span class="mini">'+todPill(p.tod)+' '+esc(placeTxt(p))+'</span></div></button>').join('');
+  $('#mapList').scrollIntoView({block:'nearest',behavior:'smooth'})}
+document.querySelector('.viewsw').onclick=e=>{const b=e.target.closest('[data-view]');if(!b)return;state.view=b.dataset.view;
+  document.querySelectorAll('.viewsw [data-view]').forEach(x=>x.setAttribute('aria-selected',x===b));renderFeed()};
 function renderFeed(){
   const q=state.q.trim().toLowerCase();
   const list=all().filter(p=>devMatch(p)&&(state.tod==='all'||p.tod===state.tod)&&(!state.wx||(p.wx||[]).includes(state.wx))&&(!q||[p.title,placeTxt(p),p.body,DEV[p.dev]||'',p.lens,(p.acc||[]).join(' '),p.accMore].join(' ').toLowerCase().includes(q)));
-  bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;$('#feedEmpty').textContent=all().length?'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.':'아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
+  lastList=list;const isMap=state.view==='map';$('#feed').hidden=isMap;$('#mapBox').hidden=!isMap;
+  if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;$('#feedEmpty').textContent=all().length?'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.':'아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
 }
 $('#q').addEventListener('input',e=>{state.q=e.target.value;renderFeed()});
 document.addEventListener('click',e=>{const c=e.target.closest('.card,.place');if(c&&c.dataset.id)openDetail(c.dataset.id)});
@@ -568,6 +605,33 @@ function reactSummary(p){const m=mine[p.id]||{};const picked=REACT.filter(r=>m[r
 const BMK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>';
 function svCount(id){return svCounts[id]||0}
 function bmk(p){const on=saved.has(p.id);return'<button type="button" class="bmk" id="saveBtn" aria-pressed="'+on+'" aria-label="'+(on?'저장됨 · 보관함에서 빼기':'레시피 저장')+' (저장 '+svCount(p.id)+'명)" title="'+(on?'저장됨':'레시피 저장')+'">'+BMK+'<span class="n" id="svN">'+svCount(p.id)+'</span></button>'}
+let editId=null,ed=null;
+function editHtml(p){const f=(id,l,v,ph)=>'<div class="field"><span class="label">'+l+'</span><input id="'+id+'" value="'+esc(v||'')+'"'+(ph?' placeholder="'+ph+'"':'')+'></div>';
+  return'<form class="editbox" id="postEdit" style="margin-top:10px">'+f('eTitle','제목',p.title)+
+  '<div class="field"><span class="label">시간대</span><div class="chips wrap-chips" id="eTod"></div></div>'+
+  '<div class="field"><span class="label">날씨</span><div class="chips wrap-chips" id="eWx"></div></div>'+
+  '<div class="field"><span class="label">위치 공개 범위</span><select id="eLoc" class="locsel" style="max-width:none"><option value="hidden">🔒 비공개</option><option value="region">지역만 공개</option>'+(p.lat!=null?'<option value="exact">정확히 공개</option>':'')+'</select>'+(p.lat==null?'<span class="section-note">정확한 위치는 올릴 때 정확히 공개를 고른 사진만 바꿀 수 있어요.</span>':'')+'</div>'+
+  '<div class="two">'+f('eBody','카메라',p.body)+f('eLens','렌즈',p.lens)+'</div>'+
+  '<div class="field"><span class="label">설정 (mm · f · 셔터 · ISO)</span><div class="four"><input id="eFocal" value="'+esc(p.focal||'')+'" placeholder="mm"><input id="eF" value="'+esc(p.f||'')+'" placeholder="f/"><input id="eS" value="'+esc(p.s||'')+'" placeholder="1/125"><input id="eIso" value="'+esc(p.iso||'')+'" placeholder="ISO"></div></div>'+
+  '<div class="field"><span class="label">필터·액세서리</span><div class="chips wrap-chips" id="eAcc"></div><input id="eAccMore" value="'+esc(p.accMore||'')+'" placeholder="제품명 (예: 블랙 디퓨전 1/8)"></div>'+
+  f('eEdit','보정',p.edit,'예: Lightroom · 하이라이트 -40')+
+  '<div class="field"><span class="label">촬영 팁</span><textarea id="eTip" rows="3">'+esc(p.tip||'')+'</textarea></div>'+
+  '<button type="submit" class="primary" id="eSave">수정 저장</button></form>'}
+function bindEdit(p){const loc=p.loc||'region';$('#eLoc').value=(loc==='exact'&&p.lat==null)?'region':loc;
+  const draw=()=>{chipRow($('#eTod'),Object.entries(TOD),v=>ed.tod===v,v=>{ed.tod=v;draw()});
+    chipRow($('#eWx'),WX.map(w=>[w,w]),v=>ed.wx.has(v),v=>{ed.wx.has(v)?ed.wx.delete(v):ed.wx.add(v);draw()});
+    chipRow($('#eAcc'),ACC.map(a=>[a,a]),v=>ed.acc.has(v),v=>{ed.acc.has(v)?ed.acc.delete(v):ed.acc.add(v);draw()})};
+  draw();
+  $('#postEdit').onsubmit=async e=>{e.preventDefault();const b=$('#eSave');b.disabled=true;b.textContent='저장 중…';
+    try{await savePostEdit(p);editId=null;toast('수정했어요');reopen(p.id);renderFeed()}catch(err){b.disabled=false;b.textContent='수정 저장';toast('수정하지 못했어요')}}}
+async function savePostEdit(p){const path='posts/'+myId;const items=await readItems(path);const i=items.findIndex(x=>x.id===p.id);if(i<0)throw new Error('nf');
+  const g=id=>v(id);const loc=$('#eLoc').value;
+  const it=Object.assign({},items[i],{title:(g('#eTitle')||(p.region+' '+(TOD[ed.tod]||''))).slice(0,80),tod:ed.tod,wx:[...ed.wx],acc:[...ed.acc],accMore:g('#eAccMore'),body:g('#eBody'),lens:g('#eLens'),focal:g('#eFocal'),f:g('#eF'),s:g('#eS'),iso:g('#eIso'),edit:g('#eEdit'),tip:g('#eTip').slice(0,1000),loc,editedAt:Date.now()});
+  if(loc!=='exact'){delete it.lat;delete it.lng}
+  if(loc==='hidden'){delete it.rlat;delete it.rlng}
+  Object.keys(it).forEach(k=>{if(it[k]===''||it[k]==null)delete it[k]});
+  items[i]=it;await db.doc(path).set({items});
+  const j=remotePosts.findIndex(x=>x.id===p.id);if(j>=0)remotePosts[j]=Object.assign({},it,{authorId:myId,img:it.imgUrl,thumb:it.thumbUrl})}
 function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen=false;reactOpen=false}openId=id;
   const acc=(p.acc||[]).concat(p.accMore?[p.accMore]:[]);
   const sn=sunNote(p);
@@ -590,10 +654,12 @@ function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen
    '<div class="reacts" id="reactPanel"'+(reactOpen?'':' hidden')+'>'+REACT.map(r=>{const i=r.l.indexOf(' ');return'<button class="react" data-k="'+r.k+'" aria-pressed="'+!!(mine[p.id]||{})[r.k]+'" title="'+r.l.slice(i+1)+'"><span class="e">'+r.l.slice(0,i)+'</span><span>'+r.l.slice(i+1)+'</span><span class="n">'+count(p,r.k)+'</span></button>'}).join('')+'</div></div>'+
    (p.tip?'<div class="tip"><div class="label">촬영 팁</div>'+esc(p.tip)+'</div>':'')+
    cmtHtml(p)+'<button class="link report" id="reportBtn">신고하기</button>'+
+   (p.authorId&&p.authorId===myId&&realId?'<button class="link report" id="editBtn">'+(editId===p.id?'수정 닫기':'이 레시피 수정')+'</button>'+(editId===p.id?editHtml(p):''):'')+
    ((p.authorId&&(p.authorId===myId||iCanEdit))||String(p.id).startsWith('u')?'<button class="link report danger" id="delBtn">이 사진 삭제</button>':'');
+  if(editId===p.id)bindEdit(p);
   $('#sheet').hidden=false;$('#sheet').scrollTop=0;document.body.style.overflow='hidden';
 }
-function closeDetail(){replyTo=null;$('#sheet').hidden=true;document.body.style.overflow='';openId=null;renderFeed();renderSaved()}
+function closeDetail(){replyTo=null;editId=null;$('#sheet').hidden=true;document.body.style.overflow='';openId=null;renderFeed();renderSaved()}
 $('#closeSheet').onclick=closeDetail;
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)closeDetail()});
 $('#sheetBody').addEventListener('toggle',e=>{if(e.target.classList&&e.target.classList.contains('recipe-box'))recipeOpen=e.target.open},true);
@@ -601,8 +667,10 @@ $('#sheetBody').addEventListener('click',e=>{const p=byId(openId);if(!p)return;
   if(e.target.closest('#reactMain')){reactOpen=!reactOpen;$('#reactPanel').hidden=!reactOpen;$('#reactMain').setAttribute('aria-expanded',reactOpen);return}
   const r=e.target.closest('.react');
   if(r&&!realId){toast('로그인하면 반응을 남길 수 있어요');login();return}
-  if(r){const k=r.dataset.k;mine[p.id]=mine[p.id]||{};mine[p.id][k]=!mine[p.id][k];save('cn_reacts',mine);pushReact(p.id);r.setAttribute('aria-pressed',!!mine[p.id][k]);r.querySelector('.n').textContent=count(p,k);$('#reactSum').innerHTML=reactSummary(p);
+  if(r){const k=r.dataset.k;const was=!!(mine[p.id]||{})[k];mine[p.id]={go:false,color:false,comp:false,gear:false};if(!was)mine[p.id][k]=true;save('cn_reacts',mine);pushReact(p.id);
+    document.querySelectorAll('#reactPanel .react').forEach(b=>{const kk=b.dataset.k;b.setAttribute('aria-pressed',!!mine[p.id][kk]);b.querySelector('.n').textContent=count(p,kk)});$('#reactSum').innerHTML=reactSummary(p);
     if(k==='go'&&mine[p.id][k])toast('보관함의 "가보고 싶은 곳"에 추가했어요');return}
+  if(e.target.id==='editBtn'){if(editId===p.id){editId=null}else{editId=p.id;ed={tod:p.tod,wx:new Set(p.wx||[]),acc:new Set(p.acc||[])}}reopen(p.id);if(editId)$('#postEdit').scrollIntoView({block:'start',behavior:'smooth'});return}
   if(e.target.id==='delBtn'){const b=e.target;if(!b.dataset.arm){b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제돼요';return}deletePost(p);return}
   if(e.target.id==='reportBtn'){const w=document.createElement('div');w.className='reasons';w.innerHTML='<span class="label">신고 사유</span>'+REASONS.map(r=>'<button type="button" class="chip" data-reason="'+r+'">'+r+'</button>').join('');e.target.replaceWith(w);return}
   if(e.target.dataset&&e.target.dataset.reason){const w=e.target.closest('.reasons');sendReport(p,e.target.dataset.reason);if(w)w.innerHTML='<span class="section-note">신고를 보냈어요.</span>';return}
@@ -820,7 +888,7 @@ $('#upForm').addEventListener('submit',async e=>{e.preventDefault();
   const pv=$('#preview');
   const p={w:pv.naturalWidth||null,h:pv.naturalHeight||null,id:'u'+Date.now(),title:v('#fTitle')||region+' '+TOD[tod],region,lat:up.loc==='exact'?(up.lat!=null?up.lat:(up.reg&&up.reg.ai?up.reg.lat:null)):null,lng:up.loc==='exact'?(up.lng!=null?up.lng:(up.reg&&up.reg.ai?up.reg.lng:null)):null,place:v('#fPlace'),
     date:v('#fDate'),time:v('#fTime'),tod,wx:[...up.wx],body:v('#fBody'),lens:v('#fLens'),acc:[...up.acc],accMore:v('#fAccMore'),
-    focal:v('#fFocal'),f:v('#fF'),s:v('#fS'),iso:v('#fIso'),edit:v('#fEdit'),tip:v('#fTip'),author:'나',img:up.img,r:{},dev:up.dev,loc:up.loc,film:up.noCam,rlat:up.lat==null&&up.reg&&up.reg.ai&&up.loc==='region'?Math.round(up.reg.lat*10)/10:null,rlng:up.lat==null&&up.reg&&up.reg.ai&&up.loc==='region'?Math.round(up.reg.lng*10)/10:null,tz:upTz()||null,tzOff:up.tzOff||null};
+    focal:v('#fFocal'),f:v('#fF'),s:v('#fS'),iso:v('#fIso'),edit:v('#fEdit'),tip:v('#fTip'),author:'나',img:up.img,r:{},dev:up.dev,loc:up.loc,film:up.noCam,rlat:up.loc==='region'&&upCoords()?Math.round(upCoords()[0]*10)/10:null,rlng:up.loc==='region'&&upCoords()?Math.round(upCoords()[1]*10)/10:null,tz:upTz()||null,tzOff:up.tzOff||null};
   const btn=$('#upBtn');btn.disabled=true;btn.textContent='올리는 중…';
   try{
     if(mode==='shared'){
@@ -880,7 +948,7 @@ $('#pfForm').addEventListener('submit',async e=>{e.preventDefault();const d={nam
 document.addEventListener('contextmenu',e=>{if(e.target.closest('img,.card,.hero,.sheet .inner,.place'))e.preventDefault()});
 document.addEventListener('dragstart',e=>{if(e.target.tagName==='IMG')e.preventDefault()});
 /* ---------- 공유 저장소 연결 ---------- */
-function rerender(){renderFeed();renderSaved();renderProfile();if(openId&&!$('#sheet').hidden){const st=$('#sheet').scrollTop;const ci=$('#cmtIn'),dv=ci?ci.value:'',fo=document.activeElement===ci&&ci;openDetail(openId);$('#sheet').scrollTop=st;const n=$('#cmtIn');if(n){n.value=dv;if(fo)n.focus()}}}
+function rerender(){renderFeed();renderSaved();renderProfile();if(openId&&!$('#sheet').hidden&&!editId){const st=$('#sheet').scrollTop;const ci=$('#cmtIn'),dv=ci?ci.value:'',fo=document.activeElement===ci&&ci;openDetail(openId);$('#sheet').scrollTop=st;const n=$('#cmtIn');if(n){n.value=dv;if(fo)n.focus()}}}
 let connectReason='';
 function setModeBar(){const m=$('#modeBar');
   if(!authReady){m.hidden=true;return}
