@@ -226,6 +226,7 @@ details.more[open] summary{margin-bottom:12px}
 .recrow{display:flex;gap:8px;align-items:flex-start}
 .recrow .recipe-box{flex:1;min-width:0}
 .bmk{flex:none;width:56px;height:64px;border:1px solid var(--line);background:var(--surface);border-radius:12px;cursor:pointer;display:grid;place-items:center;color:var(--muted)}
+.bmk{gap:2px;align-content:center}.bmk .n{font-family:var(--f-mono);font-size:11px}
 .bmk svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
 .bmk[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
 .bmk[aria-pressed="true"] svg{fill:currentColor}
@@ -479,7 +480,7 @@ let mode='local',db=null,assets=null,user=null,myId=null,iCanEdit=false;
 let localPosts = load('cn_posts',[]);
 let remotePosts = [];
 let mine = load('cn_reacts',{});          // 내 반응 {postId:{go:true}}
-let remoteCounts = {};                     // 공유 모드에서 모든 사람의 반응 수
+let remoteCounts = {}, svCounts = {}, myRaw = {}, reactsLoaded = false, savedLoaded = false;                     // 공유 모드에서 모든 사람의 반응 수
 let saved = new Set(load('cn_saved',[]));
 const names = {};
 
@@ -544,7 +545,8 @@ $('#fBtn').onclick=()=>togglePanel($('#fPanel').hidden);
 $('#fClose').onclick=()=>togglePanel(false);
 $('#fReset').onclick=()=>{state.dev='all';state.tod='all';state.wx=null;renderFilters();renderFeed()};
 $('#activeF').onclick=e=>{const b=e.target.closest('[data-clear]');if(!b)return;const k=b.dataset.clear;if(k==='dev')state.dev='all';else if(k==='tod')state.tod='all';else state.wx=null;renderFilters();renderFeed()};
-function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div><div class="mini by">'+esc(authorName(p))+'</div><div class="mini">'+esc(readout(p))+'</div></div></button>'}
+function topReact(p){let best=null,bn=0;REACT.forEach(r=>{const n=count(p,r.k);if(n>bn){bn=n;best=r}});return best?'<span class="mini top" title="'+best.l.slice(best.l.indexOf(' ')+1)+'">'+best.l.split(' ')[0]+' '+bn+'</span>':''}
+function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+topReact(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div><div class="mini by">'+esc(authorName(p))+'</div><div class="mini">'+esc(readout(p))+'</div></div></button>'}
 function bricks(el,list){if(!list.length){el.innerHTML='';return}
   const n=window.innerWidth>=720?3:2;const cols=Array.from({length:n},()=>({h:0,html:''}));
   list.forEach(p=>{const r=p.w&&p.h?p.h/p.w:1.2;const c=cols.reduce((a,b)=>b.h<a.h-0.01?b:a);c.html+=card(p);c.h+=r+0.45});
@@ -563,7 +565,8 @@ let openId=null;
 let recipeOpen=false,reactOpen=false;
 function reactSummary(p){const m=mine[p.id]||{};const picked=REACT.filter(r=>m[r.k]).map(r=>r.l.split(' ')[0]).join('');let t=0;REACT.forEach(r=>t+=count(p,r.k));return(picked?picked+' ':'')+'<span class="n">'+t+'</span>'}
 const BMK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>';
-function bmk(p){const on=saved.has(p.id);return'<button type="button" class="bmk" id="saveBtn" aria-pressed="'+on+'" aria-label="'+(on?'저장됨 · 보관함에서 빼기':'레시피 저장')+'" title="'+(on?'저장됨':'레시피 저장')+'">'+BMK+'</button>'}
+function svCount(id){return svCounts[id]||0}
+function bmk(p){const on=saved.has(p.id);return'<button type="button" class="bmk" id="saveBtn" aria-pressed="'+on+'" aria-label="'+(on?'저장됨 · 보관함에서 빼기':'레시피 저장')+' (저장 '+svCount(p.id)+'명)" title="'+(on?'저장됨':'레시피 저장')+'">'+BMK+'<span class="n" id="svN">'+svCount(p.id)+'</span></button>'}
 function openDetail(id){const p=byId(id);if(!p)return;if(id!==openId){recipeOpen=false;reactOpen=false}openId=id;
   const acc=(p.acc||[]).concat(p.accMore?[p.accMore]:[]);
   const sn=sunNote(p);
@@ -603,8 +606,8 @@ $('#sheetBody').addEventListener('click',e=>{const p=byId(openId);if(!p)return;
   if(e.target.id==='reportBtn'){const w=document.createElement('div');w.className='reasons';w.innerHTML='<span class="label">신고 사유</span>'+REASONS.map(r=>'<button type="button" class="chip" data-reason="'+r+'">'+r+'</button>').join('');e.target.replaceWith(w);return}
   if(e.target.dataset&&e.target.dataset.reason){const w=e.target.closest('.reasons');sendReport(p,e.target.dataset.reason);if(w)w.innerHTML='<span class="section-note">신고를 보냈어요.</span>';return}
   if(e.target.closest('#saveBtn')&&!realId){toast('로그인하면 레시피를 저장할 수 있어요');login();return}
-  if(e.target.closest('#saveBtn')){if(saved.has(p.id)){saved.delete(p.id);toast('보관함에서 뺐어요')}else{saved.add(p.id);toast('레시피를 저장했어요')}save('cn_saved',[...saved]);pushSaved();
-    const b=$('#saveBtn');const on=saved.has(p.id);b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'저장됨 · 보관함에서 빼기':'레시피 저장');b.title=on?'저장됨':'레시피 저장'}
+  if(e.target.closest('#saveBtn')){if(saved.has(p.id)){saved.delete(p.id);toast('보관함에서 뺐어요')}else{saved.add(p.id);toast('레시피를 저장했어요')}save('cn_saved',[...saved]);pushSaved();pushReact();
+    const b=$('#saveBtn');const on=saved.has(p.id);b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'저장됨 · 보관함에서 빼기':'레시피 저장');b.title=on?'저장됨':'레시피 저장';const k=p.id;svCounts[k]=Math.max(0,svCount(k)+(on?1:-1));$('#svN').textContent=svCount(k)}
 });
 
 /* ---------- 보관함 ---------- */
@@ -887,7 +890,10 @@ function setModeBar(){const m=$('#modeBar');
 /* 저장 구조: posts/<사용자>·reacts/<사용자>·reports/<사용자> 문서는 본인만 쓸 수 있어요 (운영자는 정리 가능) */
 function pushReact(pid){if(mode!=='shared'||!realId)return;const m={};
   Object.entries(mine).forEach(([k,o])=>{if(o&&(o.go||o.color||o.comp||o.gear))m[k]={go:!!o.go,color:!!o.color,comp:!!o.comp,gear:!!o.gear}});
+  saved.forEach(k=>{m[k]=Object.assign(m[k]||{go:false,color:false,comp:false,gear:false},{sv:true})});
   db.doc('reacts/'+myId).set({m}).catch(()=>toast('반응을 저장하지 못했어요'))}
+/* 예전에 저장한 레시피도 저장 수에 반영 */
+function syncSv(){if(!realId||!reactsLoaded||!savedLoaded)return;const need=[...saved].some(k=>!(myRaw[k]&&myRaw[k].sv))||Object.keys(myRaw).some(k=>myRaw[k]&&myRaw[k].sv&&!saved.has(k));if(need)pushReact()}
 let myHome=null;
 function renderHome(){if(!$('#homeState'))return;$('#homeState').textContent=myHome?'설정됨 · 반경 '+myHome.r+'km':'설정 안 됨';$('#homeDel').hidden=!myHome;$('#homeR').value=String(myHome?myHome.r:3)}
 function saveHome(h){if(!realId)return Promise.reject();return db.doc('saved/'+myId).set({home:h},{merge:true})}
@@ -1025,14 +1031,14 @@ async function connect(){
   db.collection('posts').limit(500).onSnapshot(snap=>{const out=[];
     snap.docs.forEach(d=>{const x=d.data()||{};(Array.isArray(x.items)?x.items:[]).forEach(it=>{if(it&&it.id&&it.imgUrl)out.push(Object.assign({},it,{authorId:d.id,img:it.imgUrl,thumb:it.thumbUrl}))})});
     out.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));remotePosts=out;rerender();renderMod();backfillThumbs()},()=>{connectReason='offline';setModeBar()});
-  db.collection('reacts').limit(1000).onSnapshot(snap=>{const c={},m={};
-    snap.docs.forEach(d=>{const x=(d.data()||{}).m||{};Object.entries(x).forEach(([pid,o])=>{if(!o)return;c[pid]=c[pid]||{};REACT.forEach(r=>{if(o[r.k])c[pid][r.k]=(c[pid][r.k]||0)+1});if(d.id===myId)m[pid]={go:!!o.go,color:!!o.color,comp:!!o.comp,gear:!!o.gear}})});
-    remoteCounts=c;mine=realId?m:{};rerender()},()=>{});
+  db.collection('reacts').limit(1000).onSnapshot(snap=>{const c={},m={},sv={};let raw={};
+    snap.docs.forEach(d=>{const x=(d.data()||{}).m||{};if(d.id===myId)raw=x;Object.entries(x).forEach(([pid,o])=>{if(!o)return;c[pid]=c[pid]||{};REACT.forEach(r=>{if(o[r.k])c[pid][r.k]=(c[pid][r.k]||0)+1});if(o.sv)sv[pid]=(sv[pid]||0)+1;if(d.id===myId)m[pid]={go:!!o.go,color:!!o.color,comp:!!o.comp,gear:!!o.gear}})});
+    remoteCounts=c;svCounts=sv;myRaw=raw;reactsLoaded=true;mine=realId?m:{};rerender();syncSv()},()=>{});
   db.collection('cmts').limit(1000).onSnapshot(snap=>{const by={};
     snap.docs.forEach(d=>{((d.data()||{}).items||[]).forEach(c=>{if(!c||!c.post||!c.text||!c.id)return;(by[c.post]=by[c.post]||[]).push(Object.assign({},c,{uid:d.id}))})});
     Object.values(by).forEach(l=>l.sort((a,b)=>(a.at||0)-(b.at||0)));cmtsByPost=by;rerender()},()=>{});
   db.collection('profiles').limit(1000).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{const x=d.data()||{};o[d.id]={bio:String(x.bio||'').slice(0,80),gear:String(x.gear||'').slice(0,80)};if(x.name)names[d.id]=String(x.name).slice(0,20)});profileData=o;rerender()},()=>{});
-  if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}},()=>{});
+  if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}savedLoaded=true;syncSv()},()=>{});
   if(iAmOwner)db.collection('reports').limit(500).onSnapshot(snap=>{const by={};reportDocs=[];
     snap.docs.forEach(d=>{const items=(d.data()||{}).items||[];reportDocs.push({id:d.id,items});items.forEach(r=>{if(!r||!r.post)return;const o=by[r.post]=by[r.post]||{n:0,why:{},title:r.title};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1})});
     reportsByPost=by;renderMod()},()=>{});
