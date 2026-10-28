@@ -63,7 +63,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* 탐색 필터 */
 .uphead{display:flex;align-items:center;gap:10px;margin-top:6px}.uphead h2{margin:0}
 .searchrow{display:flex;gap:8px;align-items:center}
-.searchrow .search{flex:1;min-width:0}
+.searchrow .qwrap{flex:1;min-width:0;position:relative}.searchrow .search{width:100%}
+.qsug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:6;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 .fbtn{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;font-size:14px;display:flex;gap:6px;align-items:center}
 .fbtn[aria-expanded="true"]{border-color:var(--ink)}
 .fbtn .cnt{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:11px;min-width:18px;height:18px;display:inline-grid;place-items:center;padding:0 5px}
@@ -206,6 +207,7 @@ details.more[open] summary{margin-bottom:12px}
 .cmt-h{display:flex;gap:6px;align-items:center;font-size:13px;flex-wrap:wrap}
 .cmt-t{white-space:pre-wrap;word-break:break-word;font-size:14px}
 .cmt-a{display:flex;gap:14px}
+.hidden-note{color:var(--muted);font-size:12.5px;font-style:italic}
 .cmt-a .link.muted{color:var(--muted);font-weight:500;margin-left:auto}
 .cmt-a .link{font-size:12.5px;padding:0}
 .cmt-form{display:grid;gap:8px;margin-top:4px}
@@ -271,7 +273,8 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surfa
   <!-- 탐색 -->
   <section id="v-explore">
     <div class="searchrow">
-      <input id="q" class="search" type="search" placeholder="장소, 렌즈, 필터로 검색">
+      <div class="qwrap"><input id="q" class="search" type="search" placeholder="장소, 렌즈, 필터로 검색" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="qSug">
+      <div class="sug qsug" id="qSug" role="listbox" hidden></div></div>
       <button type="button" class="fbtn" id="fBtn" aria-expanded="false" aria-controls="fPanel">상세 보기<span class="cnt" id="fCnt" hidden></span></button>
     </div>
     <div class="fpanel" id="fPanel" hidden>
@@ -413,7 +416,7 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surfa
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, query, limit } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, query, limit } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-storage.js";
 
 /* ===== 설정 ===== */
@@ -612,13 +615,42 @@ function hayOf(p){const key=p.id+'|'+(p.editedAt||'')+'|'+(names[p.authorId]||''
   if(!h){h=squash(normQ([p.title,placeTxt(p),p.body,DEV[p.dev]||'',p.lens,(p.acc||[]).join(' '),p.accMore,TOD[p.tod]||'',(p.wx||[]).join(' '),p.edit,authorName(p)].join(' ')));hayCache.set(key,h)}return h}
 function qMatch(p,qn){if(!qn)return true;const h=hayOf(p);const all=squash(qn);if(h.includes(all))return true;
   const toks=qn.split(/\s+/).map(squash).filter(Boolean);return toks.length>1&&toks.every(t=>h.includes(t))}
+/* 실제로 올라온 카메라·렌즈·지역·액세서리 이름 모음 (자동완성·오타 추천용) */
+let vocabCache=null,vocabKey='';
+function vocab(){const key=all().length+'|'+Object.keys(names).length;if(vocabCache&&vocabKey===key)return vocabCache;
+  const m=new Map();const add=(t,kind)=>{t=String(t||'').trim();if(!t||t.length>40)return;const k=kind+'|'+squash(normQ(t));const o=m.get(k)||{t,kind,n:0,ns:squash(normQ(t)),rs:squash(t.toLowerCase())};o.n++;m.set(k,o)};
+  all().forEach(p=>{add(p.body,'카메라');add(p.lens,'렌즈');if(p.loc!=='hidden')add(p.region,'지역');if(p.loc==='exact')add(p.place,'장소');
+    (p.acc||[]).forEach(a=>add(a,'액세서리'));add(p.accMore,'액세서리');if(p.authorId&&p.authorId!==myId)add(names[p.authorId],'사람')});
+  vocabCache=[...m.values()].filter(o=>o.ns);vocabKey=key;return vocabCache}
+/* 오타 허용: q가 t의 어딘가와 몇 글자 다른지 */
+function fuzzyDist(q,t){const m=q.length,n=t.length;if(!m)return 0;let prev=new Array(n+1).fill(0);
+  for(let i=1;i<=m;i++){const cur=[i];for(let j=1;j<=n;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(q[i-1]===t[j-1]?0:1));prev=cur}return Math.min(...prev)}
+function didYouMean(q){const ns=squash(normQ(q)),rs=squash(String(q).toLowerCase());const L=Math.max(ns.length,rs.length);if(L<3)return null;
+  const lim=L<=6?1:L<=10?2:3;let best=null;
+  vocab().forEach(o=>{const d=Math.min(fuzzyDist(ns,o.ns),fuzzyDist(rs,o.rs));if(d<=lim&&(!best||d<best.d||(d===best.d&&o.n>best.o.n)))best={d,o}});
+  return best?best.o:null}
+function setQuery(t){$('#q').value=t;state.q=t;hideQSug();renderFeed()}
 function renderFeed(){
   const qn=normQ(state.q).trim();
   const list=all().filter(p=>devMatch(p)&&(state.tod==='all'||p.tod===state.tod)&&(!state.wx||(p.wx||[]).includes(state.wx))&&qMatch(p,qn));
   lastList=list;const isMap=state.view==='map';$('#feed').hidden=isMap;$('#mapBox').hidden=!isMap;
-  if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;$('#feedEmpty').textContent=all().length?'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.':'아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
+  if(isMap){$('#feed').innerHTML='';renderMap(list)}else bricks($('#feed'),list);$('#feedEmpty').hidden=list.length>0;{const fe=$('#feedEmpty');if(!all().length)fe.textContent='아직 올라온 사진이 없어요. 아래 "올리기"에서 첫 레시피를 올려보세요.';
+    else{const dm=!list.length&&state.q.trim()?didYouMean(state.q.trim()):null;
+      fe.innerHTML=dm?'"'+esc(state.q.trim())+'"에 맞는 사진이 없어요.<br>혹시 <button type="button" class="link" data-dym="'+esc(dm.t)+'">'+esc(dm.t)+'</button>을(를) 찾으셨나요?':'조건에 맞는 사진이 없어요. 필터를 하나 풀어보세요.'}}
 }
-$('#q').addEventListener('input',e=>{state.q=e.target.value;renderFeed()});
+$('#q').addEventListener('input',e=>{state.q=e.target.value;renderFeed();showQSug()});
+function hideQSug(){$('#qSug').hidden=true;$('#q').setAttribute('aria-expanded','false')}
+function showQSug(){const raw=$('#q').value.trim();const qs=squash(normQ(raw));if(!qs){hideQSug();return}
+  const hits=vocab().filter(o=>o.ns.includes(qs)&&o.ns!==qs).sort((a,b)=>(b.ns.startsWith(qs)-a.ns.startsWith(qs))||b.n-a.n).slice(0,6);
+  if(!hits.length){hideQSug();return}
+  $('#qSug').innerHTML=hits.map(o=>'<button type="button" class="opt" role="option" data-qs="'+esc(o.t)+'">'+esc(o.t)+'<small>'+o.kind+' · '+o.n+'장</small></button>').join('');
+  $('#qSug').hidden=false;$('#q').setAttribute('aria-expanded','true')}
+$('#qSug').addEventListener('mousedown',e=>e.preventDefault());
+$('#qSug').addEventListener('click',e=>{const b=e.target.closest('[data-qs]');if(b)setQuery(b.dataset.qs)});
+$('#q').addEventListener('blur',()=>setTimeout(hideQSug,120));
+$('#q').addEventListener('focus',showQSug);
+$('#q').addEventListener('keydown',e=>{if(e.key==='Escape')hideQSug();else if(e.key==='Enter'){hideQSug();$('#q').blur()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-dym]');if(b)setQuery(b.dataset.dym)});
 document.addEventListener('click',e=>{const c=e.target.closest('.card,.place');if(c&&c.dataset.id)openDetail(c.dataset.id)});
 
 /* ---------- 상세 ---------- */
@@ -1034,7 +1066,7 @@ async function sendCmtReport(p,c,reason){
   if(!realId){toast('로그인한 상태에서만 신고할 수 있어요');return}
   try{const path='reports/'+myId;const items=(await readItems(path)).filter(x=>x.cmt!==c.id);
     items.unshift({post:p.id,cmt:c.id,cuid:c.uid,text:String(c.text||'').slice(0,120),title:String(p.title||'').slice(0,60),reason,at:Date.now()});
-    await db.doc(path).set({items:items.slice(0,200)});toast('댓글을 신고했어요. 운영자가 확인할게요')}
+    await db.doc(path).set({items:items.slice(0,200)});try{await setDoc(doc(fs,'flags/'+c.id+'_'+myId),{cmt:c.id})}catch(e){}toast('댓글을 신고했어요. 운영자가 확인할게요')}
   catch(e){toast('신고를 보내지 못했어요')}}
 async function sendReport(p,reason){
   if(mode!=='shared'||!realId){toast('로그인한 상태에서만 신고할 수 있어요');return}
@@ -1050,13 +1082,13 @@ function renderMod(){const box=$('#modBox');if(!iAmOwner){box.hidden=true;return
   const clist=Object.entries(cmtReports).sort((a,b)=>b[1].n-a[1].n);
   if(!list.length&&!clist.length){$('#modList').innerHTML='<p class="empty">들어온 신고가 없어요.</p>';return}
   const chtml=clist.map(([cid,r])=>{const why=Object.entries(r.why).map(([k,n])=>k+' '+n).join(', ');const alive=(cmtsByPost[r.post]||[]).some(x=>x.id===cid);
-    return'<div class="mod"><div class="txt"><b>💬 '+esc(r.text||'(내용 없음)')+'</b><span class="mini">'+esc(names[r.cuid]||'회원')+' · 신고 '+r.n+'건 · '+esc(why)+(alive?'':' · 이미 삭제됨')+'</span></div>'+
+    return'<div class="mod"><div class="txt"><b>💬 '+esc(r.text||'(내용 없음)')+'</b><span class="mini">'+esc(names[r.cuid]||'회원')+' · 신고 '+r.n+'건 · '+esc(why)+(alive?((flagCount[cid]||0)>=HIDE_AT?' · 자동으로 가려짐':''):' · 이미 삭제됨')+'</span></div>'+
     '<div class="mod-act">'+(byId(r.post)?'<button class="link" data-mod="open" data-id="'+esc(r.post)+'">사진 보기</button>':'')+(alive?'<button class="link danger" data-mod="cdel" data-id="'+esc(cid)+'" data-cu="'+esc(r.cuid)+'">댓글 삭제</button>':'')+'<button class="link" data-mod="cok" data-id="'+esc(cid)+'">'+(alive?'문제없음 (신고 닫기)':'신고 닫기')+'</button></div></div>'}).join('');
   $('#modList').innerHTML=chtml+list.map(([pid,r])=>{const p=byId(pid);const why=Object.entries(r.why).map(([k,n])=>k+' '+n).join(', ');
     return'<div class="mod"><div class="mod-top">'+(p?'<img src="'+(p.thumb||p.img)+'" alt="" loading="lazy">':'')+'<div class="txt"><b>'+esc(p?p.title:r.title||'삭제된 사진')+'</b><span class="mini">신고 '+r.n+'건 · '+esc(why)+'</span></div></div>'+
     '<div class="mod-act">'+(p?'<button class="link" data-mod="open" data-id="'+esc(pid)+'">사진 보기</button><button class="link danger" data-mod="del" data-id="'+esc(pid)+'">사진 삭제</button>':'')+'<button class="link" data-mod="ok" data-id="'+esc(pid)+'">문제없음 (신고 닫기)</button></div></div>'}).join('')}
 async function dismissCmtReports(cid,quiet){
-  try{for(const d of reportDocs){if(!d.items.some(x=>x.cmt===cid))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.cmt!==cid)})}
+  try{for(const fid of (flagDocs[cid]||[]))await deleteDoc(doc(fs,'flags/'+fid));for(const d of reportDocs){if(!d.items.some(x=>x.cmt===cid))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.cmt!==cid)})}
     if(!quiet)toast('신고를 닫았어요')}catch(e){if(!quiet)toast('신고를 닫지 못했어요')}}
 async function dismissReports(pid,quiet){
   try{for(const d of reportDocs){if(!d.items.some(x=>x.post===pid&&!x.cmt))continue;await db.doc('reports/'+d.id).set({items:d.items.filter(x=>x.cmt||x.post!==pid)})}
@@ -1080,9 +1112,10 @@ async function backfillThumbs(){if(backfilling||!realId||!assets)return;const ne
 let cmtsByPost={},replyTo=null;
 function cmtCount(pid){return(cmtsByPost[pid]||[]).length}
 function ago(t){const m=Math.round((Date.now()-t)/60000);if(m<1)return'방금';if(m<60)return m+'분 전';const h=Math.round(m/60);if(h<24)return h+'시간 전';const d=Math.round(h/24);if(d<30)return d+'일 전';return new Date(t).toLocaleDateString('ko-KR')}
+function cmtHidden(c){return(flagCount[c.id]||0)>=HIDE_AT}
 function cmtHtml(p){const list=cmtsByPost[p.id]||[];const ids=new Set(list.map(c=>c.id));const top=list.filter(c=>!c.re||!ids.has(c.re));
   const who=c=>c.uid===myId?'나':(names[c.uid]||'회원');
-  const one=(c,r)=>'<div class="cmt'+(r?' reply':'')+'"><div class="cmt-h"><b>'+esc(who(c))+'</b>'+(c.uid===p.authorId?'<span class="auto-tag">작성자</span>':'')+'<span class="mini">'+ago(c.at)+'</span></div><div class="cmt-t">'+esc(c.text)+'</div><div class="cmt-a">'+(r?'':'<button type="button" class="link" data-cr="'+esc(c.id)+'" data-cn="'+esc(who(c))+'">답글</button>')+((c.uid===myId||iCanEdit)?'<button type="button" class="link danger" data-cd="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">삭제</button>':'')+(c.uid!==myId&&realId?'<button type="button" class="link muted" data-crep="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">신고</button>':'')+'</div></div>';
+  const one=(c,r)=>'<div class="cmt'+(r?' reply':'')+'"><div class="cmt-h"><b>'+esc(who(c))+'</b>'+(c.uid===p.authorId?'<span class="auto-tag">작성자</span>':'')+'<span class="mini">'+ago(c.at)+'</span></div><div class="cmt-t">'+(cmtHidden(c)?(c.uid===myId||iAmOwner?'<span class="hidden-note">신고가 많아 다른 사람에게는 가려진 댓글이에요</span><br>'+esc(c.text):'<span class="hidden-note">신고가 많아 가려진 댓글이에요</span>'):esc(c.text))+'</div><div class="cmt-a">'+(r?'':'<button type="button" class="link" data-cr="'+esc(c.id)+'" data-cn="'+esc(who(c))+'">답글</button>')+((c.uid===myId||iCanEdit)?'<button type="button" class="link danger" data-cd="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">삭제</button>':'')+(c.uid!==myId&&realId?'<button type="button" class="link muted" data-crep="'+esc(c.id)+'" data-cu="'+esc(c.uid)+'">신고</button>':'')+'</div></div>';
   let h=list.length?top.map(c=>one(c,false)+list.filter(x=>x.re===c.id).map(x=>one(x,true)).join('')).join(''):'<p class="section-note">아직 질문이 없어요. 촬영 포인트나 설정이 궁금하면 물어보세요.</p>';
   const can=mode==='shared'&&realId;
   return'<div class="cmts"><h2>질문·댓글'+(list.length?' <span class="mini">'+list.length+'</span>':'')+'</h2>'+h+
@@ -1095,6 +1128,7 @@ async function addComment(p,text,re){const path='cmts/'+myId;const items=await r
 async function deleteComment(id,uid){const path='cmts/'+uid;const items=await readItems(path);await db.doc(path).set({items:items.filter(x=>x.id!==id)});
   Object.keys(cmtsByPost).forEach(k=>cmtsByPost[k]=cmtsByPost[k].filter(x=>x.id!==id))}
 let cmtSending=false;
+const HIDE_AT=3;let flagCount={},flagDocs={};
 function reopen(id){const st=$('#sheet').scrollTop;openDetail(id);$('#sheet').scrollTop=st}
 $('#sheetBody').addEventListener('click',async e=>{const p=byId(openId);if(!p)return;const t=e.target;
   if(t.dataset.prof){const u=t.dataset.prof;closeDetail();openProfile(u);return}
@@ -1156,6 +1190,7 @@ async function connect(){
     Object.keys(by).forEach(k=>{const l=by[k].sort((a,b)=>(a.at||0)-(b.at||0));by[k]=l.filter((c,i)=>!l.slice(0,i).some(x=>x.uid===c.uid&&x.text===c.text&&(x.re||'')===(c.re||'')&&Math.abs((c.at||0)-(x.at||0))<10000))});cmtsByPost=by;rerender()},()=>{});
   db.collection('profiles').limit(1000).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{const x=d.data()||{};o[d.id]={bio:String(x.bio||'').slice(0,80),gear:String(x.gear||'').slice(0,80)};if(x.name)names[d.id]=String(x.name).slice(0,20)});profileData=o;rerender()},()=>{});
   if(realId)db.doc('saved/'+myId).onSnapshot(s=>{const d=s.exists?s.data():null;myHome=d&&d.home&&Number.isFinite(d.home.lat)?d.home:null;renderHome();if(d&&Array.isArray(d.ids)){saved=new Set(d.ids);rerender()}savedLoaded=true;syncSv()},()=>{});
+  onSnapshot(query(collection(fs,'flags'),limit(3000)),snap=>{const c={},d={};snap.docs.forEach(x=>{const k=(x.data()||{}).cmt;if(!k)return;c[k]=(c[k]||0)+1;(d[k]=d[k]||[]).push(x.id)});flagCount=c;flagDocs=d;rerender()},()=>{});
   if(iAmOwner)db.collection('reports').limit(500).onSnapshot(snap=>{const by={};reportDocs=[];
     const cb={};snap.docs.forEach(d=>{const items=(d.data()||{}).items||[];reportDocs.push({id:d.id,items});items.forEach(r=>{if(!r||!r.post)return;if(r.cmt){const o=cb[r.cmt]=cb[r.cmt]||{n:0,why:{},post:r.post,cuid:r.cuid,text:r.text};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1;return}const o=by[r.post]=by[r.post]||{n:0,why:{},title:r.title};o.n++;o.why[r.reason]=(o.why[r.reason]||0)+1})});
     reportsByPost=by;cmtReports=cb;renderMod()},()=>{});
