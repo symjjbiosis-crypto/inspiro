@@ -96,8 +96,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card img{display:block;width:100%;height:auto}
 .card .meta{padding:9px 10px 11px;display:grid;gap:4px}
 .card .ttl{font-weight:600;font-size:14px;line-height:1.35}
-.card .ttlrow{display:flex;align-items:baseline;gap:6px}.card .ttlrow .ttl{flex:1;min-width:0}
-.card .by{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--f-body);font-size:11.5px}
+.card .by{flex:none;max-width:45%;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--f-body);font-size:11.5px}
 .card .cam{font-family:var(--f-body);font-size:11.5px}
 .card .plc{color:var(--muted);font-size:12px}
 .mini{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -158,7 +157,7 @@ details.more summary{cursor:pointer;font-weight:600;font-size:14px}
 details.more[open] summary{margin-bottom:12px}
 
 .dev{font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
-.card .meta>div:first-child{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.card .toprow{display:flex;gap:6px;align-items:flex-start}.card .pills{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .muted{color:var(--muted)}
 .block{font-size:13px;color:var(--bad);background:var(--bad-bg);border-radius:10px;padding:10px 12px;font-weight:500}
 .pledge{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;cursor:pointer}
@@ -548,7 +547,7 @@ $('#fClose').onclick=()=>togglePanel(false);
 $('#fReset').onclick=()=>{state.dev='all';state.tod='all';state.wx=null;renderFilters();renderFeed()};
 $('#activeF').onclick=e=>{const b=e.target.closest('[data-clear]');if(!b)return;const k=b.dataset.clear;if(k==='dev')state.dev='all';else if(k==='tod')state.tod='all';else state.wx=null;renderFilters();renderFeed()};
 function topReact(p){let best=null,bn=0;REACT.forEach(r=>{const n=count(p,r.k);if(n>bn){bn=n;best=r}});return best?'<span class="mini top" title="'+best.l.slice(best.l.indexOf(' ')+1)+'">'+best.l.split(' ')[0]+' '+bn+'</span>':''}
-function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div>'+todPill(p.tod)+devPill(p)+topReact(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><div class="ttlrow"><span class="ttl">'+esc(p.title)+'</span><span class="mini by">'+esc(authorName(p))+'</span></div><div class="plc">'+esc(placeTxt(p))+'</div>'+(p.body?'<div class="mini cam">'+esc(p.body)+'</div>':'')+'<div class="mini">'+esc(readout(p))+'</div></div></button>'}
+function card(p){return'<button class="card" data-id="'+p.id+'"><img src="'+(p.thumb||p.img)+'"'+(p.w&&p.h?' style="aspect-ratio:'+(+p.w)+'/'+(+p.h)+'"':'')+' decoding="async" alt="'+esc(p.title)+'" loading="lazy"><div class="meta"><div class="toprow"><div class="pills">'+todPill(p.tod)+devPill(p)+topReact(p)+(cmtCount(p.id)?'<span class="mini">💬 '+cmtCount(p.id)+'</span>':'')+(p.example?'<span class="ex">예시</span>':'')+'</div><span class="mini by">'+esc(authorName(p))+'</span></div><div class="ttl">'+esc(p.title)+'</div><div class="plc">'+esc(placeTxt(p))+'</div>'+(p.body?'<div class="mini cam">'+esc(p.body)+'</div>':'')+'<div class="mini">'+esc(readout(p))+'</div></div></button>'}
 function bricks(el,list){if(!list.length){el.innerHTML='';return}
   const n=window.innerWidth>=720?3:2;const cols=Array.from({length:n},()=>({h:0,html:''}));
   list.forEach(p=>{const r=p.w&&p.h?p.h/p.w:1.2;const c=cols.reduce((a,b)=>b.h<a.h-0.01?b:a);c.html+=card(p);c.h+=r+0.45});
@@ -888,6 +887,7 @@ function setModeBar(){const m=$('#modeBar');
   $('#authBtn').hidden=realId;$('#logoutBtn').hidden=!realId;
   if(connectReason==='offline'){m.hidden=false;m.textContent='서버에 연결하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';return}
   if(realId){m.hidden=true;return}
+  if(IN_APP){m.hidden=false;m.textContent='지금은 앱 안 브라우저라 구글 로그인이 안 돼요. 오른쪽 위 메뉴(⋯ 또는 ⋮)에서 "다른 브라우저로 열기"를 눌러 크롬·사파리로 열어주세요. 구경은 여기서도 할 수 있어요.';return}
   m.hidden=false;m.innerHTML='구경은 누구나 할 수 있어요. <button type="button" class="link" data-login="1">구글로 로그인</button>하면 사진을 올리고 반응·댓글을 남길 수 있어요.'}
 /* 저장 구조: posts/<사용자>·reacts/<사용자>·reports/<사용자> 문서는 본인만 쓸 수 있어요 (운영자는 정리 가능) */
 function pushReact(pid){if(mode!=='shared'||!realId)return;const m={};
@@ -1010,7 +1010,11 @@ const fassets={
     await uploadBytes(r,blob,{contentType:(o&&o.type)||'image/jpeg',cacheControl:'public,max-age=31536000'});return{id,url:await getDownloadURL(r)}},
   delete:id=>deleteObject(ref(st,id))};
 
-async function login(){const pr=new GoogleAuthProvider();pr.setCustomParameters({prompt:'select_account'});
+const UA=navigator.userAgent||'';
+const IN_APP=/KAKAOTALK|Instagram|FBAN|FBAV|Line\/|NAVER\(inapp|everytimeApp|DaumApps|; wv\)/i.test(UA);
+if(/KAKAOTALK/i.test(UA)){let tried=false;try{tried=!!sessionStorage.getItem('ext_tried');sessionStorage.setItem('ext_tried','1')}catch(e){}if(!tried)location.href='kakaotalk://web/openExternal?url='+encodeURIComponent(location.href)}
+else if(/Line\//i.test(UA)&&!/openExternalBrowser=1/.test(location.search)){location.href=location.href+(location.search?'&':'?')+'openExternalBrowser=1'}
+async function login(){if(IN_APP){toast('앱 안 브라우저에서는 구글 로그인이 막혀요. 오른쪽 위 메뉴에서 "다른 브라우저로 열기"를 눌러주세요');return}const pr=new GoogleAuthProvider();pr.setCustomParameters({prompt:'select_account'});
   try{await signInWithPopup(auth,pr)}
   catch(e){const c=e&&e.code;
     if(c==='auth/popup-blocked'||c==='auth/operation-not-supported-in-this-environment')return signInWithRedirect(auth,pr);
